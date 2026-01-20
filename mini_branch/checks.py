@@ -1,0 +1,1 @@
+# stress + deflection/drift limits, simple buckling warning (optional)

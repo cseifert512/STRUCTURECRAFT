@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini_branch"
+version = "0.0.1"
+dependencies = ["numpy", "matplotlib"]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+packages = ["mini_branch"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
