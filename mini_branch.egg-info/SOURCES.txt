@@ -8,6 +8,15 @@ pyproject.toml
 ./mini_branch/post.py
 ./mini_branch/solve.py
 ./mini_branch/viz.py
+mini_branch/__init__.py
+mini_branch/assembly.py
+mini_branch/checks.py
+mini_branch/elements.py
+mini_branch/explore.py
+mini_branch/model.py
+mini_branch/post.py
+mini_branch/solve.py
+mini_branch/viz.py
 mini_branch.egg-info/PKG-INFO
 mini_branch.egg-info/SOURCES.txt
 mini_branch.egg-info/dependency_links.txt
@@ -16,5 +25,6 @@ mini_branch.egg-info/top_level.txt
 tests/test_cantilever.py
 tests/test_element.py
 tests/test_equilibrium.py
+tests/test_invariants.py
 tests/test_portal_frame.py
 tests/test_simply_supported.py

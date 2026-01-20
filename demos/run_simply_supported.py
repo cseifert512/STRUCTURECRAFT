@@ -22,44 +22,51 @@ def main():
     A = 0.01  # Cross-section area (m²)
     P = 1000.0  # Load (Newtons) - about 100 kg weight
     
-    # Create the model: 3 nodes, 2 elements
-    nodes = {
-        0: Node(0, 0.0, 0.0),   # Left support
-        1: Node(1, L/2, 0.0),   # Middle (where load is)
-        2: Node(2, L, 0.0),     # Right support
-    }
-    
-    elements = [
-        Frame2D(0, 0, 1, E=E, A=A, I=I),  # Left half
-        Frame2D(1, 1, 2, E=E, A=A, I=I),  # Right half
-    ]
+    # Create the model with more elements for smoother visualization
+    num_elements = 8  # More elements = smoother curve, more accurate
+    num_nodes = num_elements + 1
+
+    nodes = {}
+    for i in range(num_nodes):
+        x = L * i / num_elements  # Evenly spaced along beam length
+        nodes[i] = Node(i, x, 0.0)
+
+    # Create elements connecting adjacent nodes
+    elements = []
+    for i in range(num_elements):
+        elements.append(Frame2D(i, i, i+1, E=E, A=A, I=I))
+
+    # Find the midspan node (closest to L/2)
+    mid_node = num_elements // 2
     
     # Build stiffness matrix and apply load
     K = assemble_global_K(nodes, elements)
     ndof = DOF_PER_NODE * len(nodes)
     F = np.zeros(ndof)
-    F[DOF_PER_NODE*1 + 1] = -P  # Load at middle, downward
+    F[DOF_PER_NODE*mid_node + 1] = -P  # Load at middle, downward
     
+
     # Supports: prevent rigid body motion
     # Left support: fix horizontal AND vertical (prevents sliding)
     # Right support: fix only vertical (allows horizontal expansion/contraction)
     # Both supports can still rotate (pinned supports)
+    last_node = num_nodes - 1  # Last node (right support)
     fixed = [
         DOF_PER_NODE*0 + 0,  # Node 0, ux = 0 (prevents horizontal translation)
         DOF_PER_NODE*0 + 1,  # Node 0, uy = 0 (prevents vertical movement)
-        DOF_PER_NODE*2 + 1,  # Node 2, uy = 0 (prevents vertical movement)
+        DOF_PER_NODE*last_node + 1,  # Last node, uy = 0 (prevents vertical movement)
     ]
-    
+
     # Solve!
     d, R, _ = solve_linear(K, F, fixed)
-    
+
     # ========================================================================
     # EXTRACT RESULTS
     # ========================================================================
     Ry_left = R[DOF_PER_NODE*0 + 1]    # Left support pushes up with this force
-    Ry_right = R[DOF_PER_NODE*2 + 1]   # Right support pushes up with this force
-    uy_midspan = d[DOF_PER_NODE*1 + 1] # How much middle moved down
-    
+    Ry_right = R[DOF_PER_NODE*last_node + 1]   # Right support pushes up with this force
+    uy_midspan = d[DOF_PER_NODE*mid_node + 1] # How much middle moved down
+        
     # ========================================================================
     # PRINT RESULTS
     # ========================================================================
@@ -76,14 +83,12 @@ def main():
     # ========================================================================
     # DRAW THE PICTURE
     # ========================================================================
-    # Get x and y coordinates of nodes
-    xs = np.array([nodes[i].x for i in range(3)])  # [0, 2, 4] meters
-    ys = np.array([nodes[i].y for i in range(3)])  # [0, 0, 0] (all at y=0 initially)
-    
-    # Get vertical displacements (how much each node moved down)
-    uy = np.array([d[i*DOF_PER_NODE + 1] for i in range(3)])
-    # uy will be negative (downward), like [-0.0001, -0.001, -0.0001]
-    
+    # Get x and y coordinates of ALL nodes (not just first 3!)
+    xs = np.array([nodes[i].x for i in range(num_nodes)])
+    ys = np.array([nodes[i].y for i in range(num_nodes)])
+
+    # Get vertical displacements for ALL nodes
+    uy = np.array([d[i*DOF_PER_NODE + 1] for i in range(num_nodes)])
     # Scale up the deflection so we can see it (deflections are tiny!)
     scale = 1000  # Multiply by 1000 to make visible
     

@@ -3,3 +3,5 @@ Name: mini_branch
 Version: 0.0.1
 Requires-Dist: numpy
 Requires-Dist: matplotlib
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
