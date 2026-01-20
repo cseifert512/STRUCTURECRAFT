@@ -1,7 +1,7 @@
 import numpy as np
 
 from mini_branch.model import Node, Frame2D
-from mini_branch.assemble import assemble_global_K, DOF_PER_NODE
+from mini_branch.assembly import assemble_global_K, DOF_PER_NODE
 from mini_branch.solve import solve_linear
 
 def test_cantilever_tip_load_deflection():

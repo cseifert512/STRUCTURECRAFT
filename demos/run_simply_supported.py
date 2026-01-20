@@ -1,0 +1,120 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from mini_branch.model import Node, Frame2D
+from mini_branch.assembly import assemble_global_K, DOF_PER_NODE
+from mini_branch.solve import solve_linear
+
+def main():
+    """
+    VISUAL DEMONSTRATION OF SIMPLY SUPPORTED BEAM
+    =============================================
+    This script does the same analysis but also draws a picture
+    so you can SEE the beam bending!
+    """
+    
+    # ========================================================================
+    # SETUP: Same as the test above
+    # ========================================================================
+    L = 4.0  # Beam length (meters)
+    E = 210e9  # Material stiffness (Pascals) - Steel
+    I = 8.0e-6  # Bending resistance (m⁴)
+    A = 0.01  # Cross-section area (m²)
+    P = 1000.0  # Load (Newtons) - about 100 kg weight
+    
+    # Create the model: 3 nodes, 2 elements
+    nodes = {
+        0: Node(0, 0.0, 0.0),   # Left support
+        1: Node(1, L/2, 0.0),   # Middle (where load is)
+        2: Node(2, L, 0.0),     # Right support
+    }
+    
+    elements = [
+        Frame2D(0, 0, 1, E=E, A=A, I=I),  # Left half
+        Frame2D(1, 1, 2, E=E, A=A, I=I),  # Right half
+    ]
+    
+    # Build stiffness matrix and apply load
+    K = assemble_global_K(nodes, elements)
+    ndof = DOF_PER_NODE * len(nodes)
+    F = np.zeros(ndof)
+    F[DOF_PER_NODE*1 + 1] = -P  # Load at middle, downward
+    
+    # Supports: prevent rigid body motion
+    # Left support: fix horizontal AND vertical (prevents sliding)
+    # Right support: fix only vertical (allows horizontal expansion/contraction)
+    # Both supports can still rotate (pinned supports)
+    fixed = [
+        DOF_PER_NODE*0 + 0,  # Node 0, ux = 0 (prevents horizontal translation)
+        DOF_PER_NODE*0 + 1,  # Node 0, uy = 0 (prevents vertical movement)
+        DOF_PER_NODE*2 + 1,  # Node 2, uy = 0 (prevents vertical movement)
+    ]
+    
+    # Solve!
+    d, R, _ = solve_linear(K, F, fixed)
+    
+    # ========================================================================
+    # EXTRACT RESULTS
+    # ========================================================================
+    Ry_left = R[DOF_PER_NODE*0 + 1]    # Left support pushes up with this force
+    Ry_right = R[DOF_PER_NODE*2 + 1]   # Right support pushes up with this force
+    uy_midspan = d[DOF_PER_NODE*1 + 1] # How much middle moved down
+    
+    # ========================================================================
+    # PRINT RESULTS
+    # ========================================================================
+    print("Simply Supported Beam - Midspan Point Load")
+    print("=" * 50)
+    print(f"Left reaction (N): {Ry_left:.2f}")
+    print(f"Right reaction (N): {Ry_right:.2f}")
+    print(f"Midspan deflection (m): {uy_midspan:.6f}")
+    print()
+    print("Expected (from textbook):")
+    print(f"Reactions: {P/2:.2f} N each (each support takes half)")
+    print(f"Max deflection: {-P * L**3 / (48 * E * I):.6f} m")
+    
+    # ========================================================================
+    # DRAW THE PICTURE
+    # ========================================================================
+    # Get x and y coordinates of nodes
+    xs = np.array([nodes[i].x for i in range(3)])  # [0, 2, 4] meters
+    ys = np.array([nodes[i].y for i in range(3)])  # [0, 0, 0] (all at y=0 initially)
+    
+    # Get vertical displacements (how much each node moved down)
+    uy = np.array([d[i*DOF_PER_NODE + 1] for i in range(3)])
+    # uy will be negative (downward), like [-0.0001, -0.001, -0.0001]
+    
+    # Scale up the deflection so we can see it (deflections are tiny!)
+    scale = 1000  # Multiply by 1000 to make visible
+    
+    # Create the plot
+    plt.figure(figsize=(10, 4))
+    
+    # Draw original (straight) beam
+    plt.plot(xs, ys, 'b-o', label='Undeformed (original)', linewidth=2, markersize=8)
+    
+    # Draw deformed (bent) beam
+    # ys + scale*uy means: original y position + (scaled displacement)
+    plt.plot(xs, ys + scale*uy, 'r-o', label=f'Deformed (×{scale} scale)', 
+             linewidth=2, markersize=8)
+    
+    # Draw a reference line at y=0
+    plt.axhline(y=0, color='k', linestyle='--', alpha=0.3, label='Reference')
+    
+    # Make it pretty
+    plt.legend()
+    plt.title("Simply Supported Beam - Midspan Point Load")
+    plt.xlabel("x (m)")
+    plt.ylabel("y (m)")
+    plt.grid(True, alpha=0.3)
+    
+    # Show the plot
+    plt.show()
+    
+    # WHAT YOU'LL SEE:
+    # - Blue line: straight beam (before loading)
+    # - Red line: bent beam (after loading) - middle sags down
+    # The red line is exaggerated 1000× so you can see the bending
+
+if __name__ == "__main__":
+    main()
