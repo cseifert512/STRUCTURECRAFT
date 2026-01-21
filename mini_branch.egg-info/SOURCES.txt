@@ -4,6 +4,7 @@ pyproject.toml
 ./mini_branch/checks.py
 ./mini_branch/elements.py
 ./mini_branch/explore.py
+./mini_branch/loads.py
 ./mini_branch/model.py
 ./mini_branch/post.py
 ./mini_branch/solve.py
