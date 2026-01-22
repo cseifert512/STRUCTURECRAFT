@@ -41,6 +41,7 @@ The challenge: Find the optimal balance between:
 from dataclasses import dataclass
 from typing import Tuple, Dict, List
 import numpy as np
+import pandas as pd
 
 from .catalog import Material, Section
 from .model import Node, Frame2D
@@ -887,3 +888,248 @@ def check_constraints(
             return False, f"Brace angle {min_angle:.1f}° < minimum {min_brace_angle:.1f}°"
     
     return True, ""
+
+
+# ============================================================================
+# VARIANT EVALUATION
+# ============================================================================
+
+def evaluate_variant(
+    params: PortalParams,
+    material: Material,
+    sections: List[Section],
+) -> Dict:
+    """
+    Evaluate a single portal frame design variant.
+    
+    This function takes design parameters, builds the model, solves it,
+    and extracts key performance metrics (drift, moments, volume, etc.).
+    
+    WHY THIS FUNCTION?
+    ------------------
+    - Encapsulates the full evaluation pipeline (model → solve → metrics)
+    - Handles failures gracefully (returns ok=False with reason)
+    - Returns a clean dict that can be converted to DataFrame row
+    - Reusable in both batch search and single-case analysis
+    
+    Parameters:
+    -----------
+    params : PortalParams
+        Design parameters to evaluate
+    
+    material : Material
+        Material properties (E, density, carbon_factor)
+    
+    sections : List[Section]
+        Section catalog (TIMBER_SECTIONS)
+    
+    Returns:
+    --------
+    Dict
+        Dictionary with all params fields + metrics:
+        - All PortalParams fields (span, height, brace, etc.)
+        - drift: float (max horizontal displacement at top, m)
+        - max_abs_M: float (maximum absolute moment, N·m)
+        - volume: float (total material volume, m³)
+        - carbon: float (embodied carbon, kg CO₂)
+        - ok: bool (True if solved successfully)
+        - reason: str (empty if ok, error message if failed)
+    """
+    from .assembly import assemble_global_K
+    from .loads import assemble_element_loads_global
+    from .solve import solve_linear, MechanismError
+    from .post import element_end_forces_local
+    from .elements import element_geometry
+    
+    # Initialize result dict with all params
+    result = {
+        'span': params.span,
+        'height': params.height,
+        'brace': params.brace,
+        'sec_col': params.sec_col,
+        'sec_beam': params.sec_beam,
+        'sec_brace': params.sec_brace,
+        'udl_w': params.udl_w,
+        'wind_P': params.wind_P,
+        'shipping_limit': params.shipping_limit,
+    }
+    
+    try:
+        # ====================================================================
+        # STEP 1: BUILD MODEL
+        # ====================================================================
+        nodes, elements, fixed_dofs, element_udl_map, nodal_loads = make_portal(
+            params, material, sections
+        )
+        
+        # ====================================================================
+        # STEP 2: ASSEMBLE STIFFNESS MATRIX
+        # ====================================================================
+        K = assemble_global_K(nodes, elements)
+        ndof = DOF_PER_NODE * len(nodes)
+        
+        # ====================================================================
+        # STEP 3: ASSEMBLE LOAD VECTOR
+        # ====================================================================
+        F = np.zeros(ndof)
+        
+        # Add UDL loads
+        F += assemble_element_loads_global(nodes, elements, element_udl_map)
+        
+        # Add nodal loads
+        for node_id, load_vec in nodal_loads.items():
+            F[dof_index(node_id, 0)] += load_vec[0]  # Fx
+            F[dof_index(node_id, 1)] += load_vec[1]  # Fy
+            F[dof_index(node_id, 2)] += load_vec[2]  # Mz
+        
+        # ====================================================================
+        # STEP 4: SOLVE
+        # ====================================================================
+        d, R, free = solve_linear(K, F, fixed_dofs)
+        
+        # ====================================================================
+        # STEP 5: EXTRACT METRICS
+        # ====================================================================
+        
+        # Drift: max horizontal displacement at top nodes (1 and 2)
+        ux_node1 = d[dof_index(1, 0)]  # Left top, horizontal
+        ux_node2 = d[dof_index(2, 0)]  # Right top, horizontal
+        drift = max(abs(ux_node1), abs(ux_node2))
+        
+        # Max moment: check all elements
+        max_abs_M = 0.0
+        for element in elements:
+            udl_w = element_udl_map.get(element.id, None)
+            f_local = element_end_forces_local(nodes, element, d, udl_w=udl_w)
+            
+            Mi = f_local[2]  # Moment at node i
+            Mj = f_local[5]  # Moment at node j
+            max_abs_M = max(max_abs_M, abs(Mi), abs(Mj))
+        
+        # Volume: sum of (A * L) for all elements
+        volume = 0.0
+        for element in elements:
+            L, _, _ = element_geometry(nodes, element)
+            volume += element.A * L
+        
+        # Carbon: volume * carbon_factor
+        carbon = volume * material.carbon_factor
+        
+        # ====================================================================
+        # STEP 6: RETURN SUCCESS RESULT
+        # ====================================================================
+        result.update({
+            'drift': drift,
+            'max_abs_M': max_abs_M,
+            'volume': volume,
+            'carbon': carbon,
+            'ok': True,
+            'reason': '',
+        })
+        
+    except MechanismError as e:
+        # Structure is unstable (mechanism)
+        result.update({
+            'drift': np.nan,
+            'max_abs_M': np.nan,
+            'volume': np.nan,
+            'carbon': np.nan,
+            'ok': False,
+            'reason': f'unstable: {str(e)}',
+        })
+    except Exception as e:
+        # Other errors (shouldn't happen, but be safe)
+        result.update({
+            'drift': np.nan,
+            'max_abs_M': np.nan,
+            'volume': np.nan,
+            'carbon': np.nan,
+            'ok': False,
+            'reason': f'error: {str(e)}',
+        })
+    
+    return result
+
+
+def run_search(
+    n: int,
+    seed: int = 42,
+    material: Material = None,
+    sections: List[Section] = None,
+) -> pd.DataFrame:
+    """
+    Run a batch search over portal frame design variants.
+    
+    This function generates random design variants, evaluates each one,
+    and returns a DataFrame with all results. This is the core of Day 3's
+    design exploration workflow.
+    
+    WHY THIS FUNCTION?
+    ------------------
+    - Encapsulates the entire search loop
+    - Handles failures gracefully (continues even if some variants fail)
+    - Returns clean DataFrame for analysis/plotting
+    - Reproducible via seed
+    
+    Parameters:
+    -----------
+    n : int
+        Number of variants to generate and evaluate
+        - May return fewer if many are rejected by constraints
+    
+    seed : int
+        Random seed for reproducibility
+        - Same seed = same sequence of variants
+        - Default: 42
+    
+    material : Material, optional
+        Material properties (defaults to DEFAULT_MATERIAL)
+    
+    sections : List[Section], optional
+        Section catalog (defaults to TIMBER_SECTIONS)
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with one row per variant, columns:
+        - All PortalParams fields (span, height, brace, sec_col, etc.)
+        - drift: float (m)
+        - max_abs_M: float (N·m)
+        - volume: float (m³)
+        - carbon: float (kg CO₂)
+        - ok: bool
+        - reason: str
+    """
+    from .catalog import DEFAULT_MATERIAL, TIMBER_SECTIONS
+    
+    # Use defaults if not provided
+    if material is None:
+        material = DEFAULT_MATERIAL
+    if sections is None:
+        sections = TIMBER_SECTIONS
+    
+    # Initialize random number generator
+    rng = np.random.default_rng(seed)
+    
+    # Generate variants
+    print(f"Generating {n} design variants...")
+    variants = sample_params(rng, sections, n)
+    print(f"Generated {len(variants)} valid variants (some may have been rejected by constraints)")
+    
+    # Evaluate each variant
+    print(f"Evaluating {len(variants)} variants...")
+    results = []
+    
+    for i, params in enumerate(variants):
+        if (i + 1) % 50 == 0 or (i + 1) == len(variants):
+            print(f"  Progress: {i + 1}/{len(variants)}")
+        
+        result = evaluate_variant(params, material, sections)
+        results.append(result)
+    
+    print(f"Evaluation complete: {sum(r['ok'] for r in results)} successful, {sum(not r['ok'] for r in results)} failed")
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(results)
+    
+    return df
