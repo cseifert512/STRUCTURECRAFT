@@ -1,17 +1,17 @@
 Day 3 objectives
 
-By end of Day 3 you can run:
+By end of Day 3 the following should run:
 
 py .\demos\run_portal_search.py --n 500 --seed 42
 
 
-…and you get:
+…and the outputs are:
 
 artifacts/results.csv (one row per design)
 
 artifacts/pareto.png (volume proxy vs drift)
 
-artifacts/top10.md (the “best” candidates with parameters + metrics)
+artifacts/top10.md (the "best" candidates with parameters + metrics)
 
 artifacts/winner_frame.png (deformed shape for a chosen design)
 
@@ -42,7 +42,7 @@ Rhino integration
 
 Architecture rule (how new code interacts with old code)
 
-You keep using:
+These modules continue to be used:
 
 assemble_global_K
 
@@ -52,7 +52,7 @@ loads.py to build global load vector from UDLs + nodal loads
 
 post.py to compute element end forces (for max moment)
 
-You add:
+New additions:
 
 catalog.py (sections/material presets)
 
@@ -64,20 +64,20 @@ viz.py (plots)
 
 one demo script that ties it together
 
-The Day 2 portal demo should basically become “the single-case evaluator” used inside the search loop.
+The Day 2 portal demo should basically become "the single-case evaluator" used inside the search loop.
 
 Day 3 deliverable design (what the code should look like)
 Data flow per variant
 
 params -> (nodes, elements, fixed_dofs, loads) -> K,F -> solve -> d,R -> metrics -> row
 
-This is the pipeline you’ll reuse in Day 4 (ML training uses results.csv).
+This is the pipeline to be reused in Day 4 (ML training uses results.csv).
 
 Day 3 plan (timeboxed, ruthless)
-Block A (1–2 hours): Define your param schema + section catalog
+Block A (1–2 hours): Define the param schema + section catalog
 Goal
 
-Stop hardcoding numbers in demos. Build a tiny catalog you can index into.
+Stop hardcoding numbers in demos. Build a tiny catalog to index into.
 
 Deliverables
 
@@ -85,14 +85,14 @@ Create src/mini_branch/catalog.py:
 
 Material(name, E, density, carbon_factor) (carbon_factor can be a constant placeholder)
 
-Section(name, A, I, S) (S = section modulus; you can compute S if you assume depth, but it’s fine to store a rough number)
+Section(name, A, I, S) (S = section modulus; S can be computed assuming depth, but it's fine to store a rough number)
 
 TIMBER_SECTIONS = [...] (6–12 options)
 
 DEFAULT_MATERIAL = ...
 
 Expectation
-You can refer to members by section index, and compute volume proxy = Σ(A·L).
+Members can be referred to by section index, and volume proxy = Σ(A·L) can be computed.
 
 How it connects
 Catalog indices become ML features in Day 4.
@@ -100,7 +100,7 @@ Catalog indices become ML features in Day 4.
 Block B (2–3 hours): Build a parametric portal generator
 Goal
 
-Turn “portal frame” into a function.
+Turn "portal frame" into a function.
 
 Deliverables
 
@@ -145,7 +145,7 @@ Day 3 evaluation loop just samples PortalParams and calls make_portal.
 Block C (2–3 hours): Implement variant sampling + constraints
 Goal
 
-Generate “design variants” like a product would.
+Generate "design variants" like a product would.
 
 Deliverables
 
@@ -155,7 +155,7 @@ sample_params(rng, sections, n) -> list[PortalParams]
 
 span range, height range, brace toggle, random section picks
 
-Constraint filters / flags (don’t overcomplicate):
+Constraint filters / flags (don't overcomplicate):
 
 max_member_length <= shipping_limit (else reject)
 
@@ -164,10 +164,10 @@ unique_sections_count <= 3 (else penalty or reject)
 brace angle check: if brace=1 and angle < 25° flag or reject
 
 Expectation
-You can generate 500 variants with reproducibility (seed).
+500 variants can be generated with reproducibility (seed).
 
 How it connects
-These constraints become the “fabrication-aware” story you tell Lucas.
+These constraints become the "fabrication-aware" story to tell Lucas.
 
 Block D (3–5 hours): Batch evaluation + metrics extraction
 Goal
@@ -215,7 +215,7 @@ Search completes without crashing even if some variants fail.
 Failures become rows with ok=False and reason="unstable".
 
 How it connects
-Day 4 uses this CSV for surrogate training. Stability handling is a massive “detail-oriented” flex.
+Day 4 uses this CSV for surrogate training. Stability handling is a massive "detail-oriented" flex.
 
 Block E (1–2 hours): Pareto frontier + plots
 Goal
@@ -228,13 +228,13 @@ Create src/mini_branch/pareto.py:
 
 pareto_mask(df, x="volume", y="drift") -> boolean mask
 
-“non-dominated” = no other design has <=volume and <=drift with one strict
+"non-dominated" = no other design has <=volume and <=drift with one strict
 
 Create src/mini_branch/viz.py:
 
 plot_pareto(df, mask, outpath)
 
-plot_frame_deformed(nodes, elements, d, outpath) (reuse your Day 2 plotting style)
+plot_frame_deformed(nodes, elements, d, outpath) (reuse the Day 2 plotting style)
 
 Demo script demos/run_portal_search.py should:
 
@@ -247,12 +247,12 @@ save plot artifacts/pareto.png
 write artifacts/top10.md (top by a chosen score or just list Pareto set sorted by volume)
 
 Expectation
-A plot appears that visibly shows tradeoffs. This is the “design-space explorer” artifact.
+A plot appears that visibly shows tradeoffs. This is the "design-space explorer" artifact.
 
 How it connects
-Day 4’s guided search will try to find “better Pareto points” more efficiently.
+Day 4's guided search will try to find "better Pareto points" more efficiently.
 
-Block F (1–2 hours): Minimal tests that keep you honest
+Block F (1–2 hours): Minimal tests that maintain integrity
 Deliverables
 
 Add tests/test_search_pipeline_smoke.py:
@@ -265,14 +265,14 @@ at least one ok=True
 
 no NaNs in key metrics for ok rows
 
-Optional: tests/test_pareto.py with a tiny synthetic dataset to confirm your pareto logic.
+Optional: tests/test_pareto.py with a tiny synthetic dataset to confirm the pareto logic.
 
 Expectation
-Your pipeline doesn’t regress when you refactor for Day 4.
+The pipeline doesn't regress when refactoring for Day 4.
 
 End-of-Day-3 deliverables checklist
 
-New files you should have:
+New files expected:
 
 src/mini_branch/catalog.py
 
@@ -298,11 +298,11 @@ artifacts/top10.md
 
 artifacts/winner_frame.png (from one chosen design)
 
-Narrative you’ll be able to claim after Day 3
+Narrative that can be claimed after Day 3
 
-“I implemented a validated 2D frame solver, then wrapped it in a parametric design explorer that generates portal frame variants, enforces fabrication-aware constraints (shipping length, part variety, bracing geometry), and outputs a Pareto frontier of stiffness vs material.”
+"I implemented a validated 2D frame solver, then wrapped it in a parametric design explorer that generates portal frame variants, enforces fabrication-aware constraints (shipping length, part variety, bracing geometry), and outputs a Pareto frontier of stiffness vs material."
 
-That’s Branch energy.
+That's Branch energy.
 
 How Day 3 sets up Day 4 (direct)
 
@@ -318,7 +318,7 @@ re-run best ones with true solver
 
 show improvement vs random sampling
 
-So Day 3’s “clean results table + stable parameterization” is the whole enabler.
+So Day 3's "clean results table + stable parameterization" is the whole enabler.
 
 Working order 
 
@@ -336,7 +336,7 @@ Pareto + plots
 
 smoke tests
 
-This order keeps you shipping forward without refactoring hell.
+This order keeps progress moving forward without refactoring hell.
 
 ---
 

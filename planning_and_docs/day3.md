@@ -2,7 +2,7 @@
 
 ## Overview
 
-Day 3 transformed the structural analysis solver from a **single-case analysis tool** into a **design exploration system**. Instead of analyzing one design at a time, we can now generate hundreds of design variants, evaluate them all, and identify the optimal trade-offs between competing objectives (cost vs. performance).
+Day 3 transformed the structural analysis solver from a **single-case analysis tool** into a **design exploration system**. Instead of analyzing one design at a time, it's now possible to generate hundreds of design variants, evaluate them all, and identify the optimal trade-offs between competing objectives (cost vs. performance).
 
 ## What We Built
 
@@ -37,18 +37,18 @@ This is the foundation for **optimization** - instead of guessing what design is
 
 ### The Real-World Problem
 
-In structural engineering, you're always balancing competing objectives:
+In structural engineering, there's always a balance between competing objectives:
 
 - **Cost/Material**: Use less material = lower cost, lower carbon footprint
 - **Performance/Stiffness**: Use more material = stiffer structure, less deflection
 
-**The Challenge**: You can't have both! More material = better performance, but higher cost. Less material = lower cost, but worse performance.
+**The Challenge**: Both objectives can't be optimized simultaneously! More material = better performance, but higher cost. Less material = lower cost, but worse performance.
 
-**The Solution**: Find the **Pareto frontier** - the set of designs where you can't improve one objective without making the other worse. These are the only designs worth considering.
+**The Solution**: Find the **Pareto frontier** - the set of designs where improving one objective necessarily makes the other worse. These are the only designs worth considering.
 
 ### Example
 
-Imagine you're designing a portal frame for a warehouse:
+Imagine designing a portal frame for a warehouse:
 
 - **Design A**: Volume = 0.5 m³, Drift = 10 mm
 - **Design B**: Volume = 0.6 m³, Drift = 10 mm  → **Dominated** (same drift, more material)
@@ -390,7 +390,7 @@ From a 500-design search:
 - **Best volume**: ~0.05 m³ (very light, but high drift)
 - **Best drift**: ~5 mm (very stiff, but high volume)
 
-The Pareto frontier shows: **You can't have both low volume AND low drift - you must choose your trade-off.**
+The Pareto frontier shows: **Both low volume AND low drift can't be achieved simultaneously - the trade-off must be chosen.**
 
 ---
 
@@ -454,4 +454,3 @@ The foundation is solid - Day 3's clean data pipeline and evaluation system make
 ---
 
 **Status**: ✅ Day 3 Complete - Design Space Exploration, Pareto Analysis, and Visualization implemented and validated
-

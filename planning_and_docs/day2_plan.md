@@ -1,16 +1,16 @@
-Day 2 is where your solver stops being a cantilever trick and becomes a usable structural kernel: it can handle member loads (UDL), it can solve a portal frame, and it can output engineering-relevant quantities (reactions, drift, end moments). That’s the bridge to Day 3 (design exploration).
+Day 2 is where the solver stops being a cantilever trick and becomes a usable structural kernel: it can handle member loads (UDL), it can solve a portal frame, and it can output engineering-relevant quantities (reactions, drift, end moments). That's the bridge to Day 3 (design exploration).
 
 Below is a ruthless, executable Day-2 plan with file-by-file deliverables, integration points, and expectations.
 
 Day 2 objectives
 
-By end of Day 2 you can run:
+By end of Day 2 the following should run:
 
 pytest
 py .\demos\run_portal_frame.py
 
 
-…and you get:
+…and the outputs are:
 
 portal frame solves under gravity UDL + lateral point load
 
@@ -20,7 +20,7 @@ a simple plot: undeformed vs deformed frame
 
 a UDL validation test that passes (with a meshed beam)
 
-Scope (what’s in / out)
+Scope (what's in / out)
 IN (Day 2)
 
 Uniform Distributed Load (UDL) on frame elements (local transverse direction)
@@ -43,17 +43,17 @@ Rhino/Grasshopper bridge
 
 Optimization / AI surrogate (Day 4)
 
-Architecture rule (how new code interacts with your old code)
+Architecture rule (how new code interacts with the existing code)
 
-You keep these stable:
+These remain stable:
 
 assemble_global_K(nodes, elements) ✅
 
 solve_linear(K, F, fixed_dofs, ...) ✅
 
-Your Day-1 tests must keep passing unchanged.
+The Day-1 tests must keep passing unchanged.
 
-You add:
+New additions:
 
 loads.py (new)
 
@@ -63,7 +63,7 @@ viz.py (optional new)
 
 new demos/tests
 
-Sign conventions (don’t let this bite you)
+Sign conventions (be aware of these)
 
 Global axes: +y up
 
@@ -104,21 +104,21 @@ End moments: wL^2/12 with opposite signs
 Local equivalent nodal force vector:
 [0, wL/2, wL^2/12, 0, wL/2, -wL^2/12]
 
-Then transform to global via the same T you already have:
+Then transform to global via the same T already available:
 f_global = T.T @ f_local
 
 Expectation
 
-You can now build F from:
+F can now be built from:
 
-nodal point loads (what you already do)
+nodal point loads (existing functionality)
 
 plus element UDL loads (new)
 
 Block B (2–3 hours): Validate UDL with a meshed simply supported beam
 Why meshed?
 
-A single Euler–Bernoulli element won’t match UDL deflection perfectly (UDL produces a quartic curve). Mesh it (e.g., 10 elements) and compare midspan deflection.
+A single Euler–Bernoulli element won't match UDL deflection perfectly (UDL produces a quartic curve). Mesh it (e.g., 10 elements) and compare midspan deflection.
 
 Deliverable
 
@@ -153,27 +153,27 @@ Closed form max deflection:
 𝐼
 δ
 max
-	​
+​
 
 =
 384EI
 5w
 0
-	​
+​
 
 L
 4
-	​
+​
 
 
 (sign negative for downward)
 
 Tolerance
-Use something like rtol=2e-2 (2%) for n=10. If you want it tighter, bump mesh to n=20.
+Use something like rtol=2e-2 (2%) for n=10. For tighter tolerance, bump mesh to n=20.
 
 Expectation
 
-This test is your “I don’t just code, I validate loads” proof.
+This test is the "I don't just code, I validate loads" proof.
 
 Block C (2–3 hours): Postprocessing end forces (N/V/M) per element
 Goal
@@ -202,13 +202,13 @@ return f_local as [Ni, Vi, Mi, Nj, Vj, Mj]
 
 Expectation
 
-For any solved structure you can now print:
+For any solved structure it's now possible to print:
 
 max |M| across all members
 
 reactions are already in R
 
-you’re one step away from utilization checks (Day 3/4 optional)
+this is one step away from utilization checks (Day 3/4 optional)
 
 Block D (2–3 hours): Portal frame demo (gravity + lateral)
 Deliverable
@@ -257,7 +257,7 @@ plot deformed shape (scaled)
 
 Expectation
 
-This demo should run with a single command and produce a plot. This is the “Lucas sees it and immediately gets it” moment.
+This demo should run with a single command and produce a plot. This is the "Lucas sees it and immediately gets it" moment.
 
 Block E (1–2 hours): Sanity tests for the portal frame + equilibrium
 Deliverables
@@ -274,11 +274,11 @@ drift finite and nonzero under lateral load
 
 global equilibrium: sum of reactions in x ≈ sum of applied Fx; sum in y ≈ sum of applied Fy (UDL total)
 
-This reinforces “detail-oriented, not vibes-based.”
+This reinforces "detail-oriented, not vibes-based."
 
 End-of-Day-2 deliverables checklist
 
-You should have these new files:
+These new files are expected:
 
 src/mini_branch/loads.py
 
@@ -300,7 +300,7 @@ UDL beam validation passes
 
 How Day 2 sets up Day 3 (directly)
 
-Day 3 is “generate variants + Pareto frontier.” That requires:
+Day 3 is "generate variants + Pareto frontier." That requires:
 
 A standardized design family (portal frame) ✅ (Day 2 demo becomes the generator template)
 
@@ -308,9 +308,9 @@ A richer load model (UDL + lateral) ✅
 
 A way to compute objective metrics (drift, moments, volume proxy) ✅ (postprocessing unlocks this)
 
-So Day 2 is the last “pure engineering plumbing” day before you go full design/product mode.
+So Day 2 is the last "pure engineering plumbing" day before moving to full design/product mode.
 
-Recommended working order (don’t improvise)
+Recommended working order (don't improvise)
 
 Implement loads.py UDL vector + global assembly
 
@@ -322,4 +322,4 @@ Build portal demo using those modules
 
 Add portal equilibrium test
 
-If you follow that order, you’ll finish Day 2 with minimal thrash and maximum “looks professional” output.
+Following that order will result in minimal thrash and maximum "looks professional" output.

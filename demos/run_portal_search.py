@@ -42,7 +42,13 @@ import pandas as pd
 from mini_branch.catalog import TIMBER_SECTIONS, DEFAULT_MATERIAL
 from mini_branch.explore import run_search, make_portal, evaluate_variant
 from mini_branch.pareto import pareto_mask
-from mini_branch.viz import plot_pareto, plot_frame_deformed
+from mini_branch.viz import (
+    plot_pareto, 
+    plot_frame_deformed, 
+    plot_design_card,
+    plot_pareto_comparison,
+    plot_pareto_enhanced,
+)
 from mini_branch.assembly import assemble_global_K
 from mini_branch.loads import assemble_element_loads_global
 from mini_branch.solve import solve_linear
@@ -292,17 +298,36 @@ This will generate:
     - Frontier shows the best possible trade-offs
     """
     
-    print("STEP 4: Creating Pareto plot...")
+    print("STEP 4: Creating Pareto plots...")
     print("-" * 70)
     
     # Create mask for full DataFrame (including failed designs)
     full_mask = pd.Series(False, index=df.index)
     full_mask[successful_df.index[mask]] = True
     
+    # Original Pareto plot
     plot_path = 'artifacts/pareto.png'
     plot_pareto(df, full_mask, plot_path)
     
-    print(f"Pareto plot saved to: {plot_path}")
+    # Enhanced Pareto plot (architect-friendly)
+    enhanced_path = 'artifacts/pareto_enhanced.png'
+    plot_pareto_enhanced(df, full_mask, enhanced_path)
+    
+    # Pareto comparison with frame thumbnails
+    comparison_path = 'artifacts/pareto_comparison.png'
+    plot_pareto_comparison(
+        df, full_mask, comparison_path,
+        make_portal_func=make_portal,
+        evaluate_func=evaluate_variant,
+        material=DEFAULT_MATERIAL,
+        sections=TIMBER_SECTIONS,
+        n_designs=6
+    )
+    
+    print(f"Pareto plots saved to:")
+    print(f"  - {plot_path} (basic)")
+    print(f"  - {enhanced_path} (enhanced)")
+    print(f"  - {comparison_path} (with frame thumbnails)")
     print()
     
     # ========================================================================
@@ -421,12 +446,93 @@ This will generate:
         
         d, R, _ = solve_linear(K, F, fixed_dofs)
         
-        # Plot
+        # Plot (original simple version)
         frame_path = 'artifacts/winner_frame.png'
         plot_frame_deformed(nodes, elements, d, frame_path, 
                            title=f"Winner Design: Volume={winner['volume']:.4f} m³, Drift={winner['drift']*1000:.2f} mm")
         
-        print(f"Winner design visualization saved to: {frame_path}")
+        # Plot (enhanced design card - architect-friendly)
+        card_path = 'artifacts/winner_design_card.png'
+        winner_params_dict = {
+            'span': winner['span'],
+            'height': winner['height'],
+            'brace': int(winner['brace']),
+            'sec_col': int(winner['sec_col']),
+            'sec_beam': int(winner['sec_beam']),
+            'sec_brace': int(winner['sec_brace']),
+            'udl_w': winner['udl_w'],
+            'wind_P': winner['wind_P'],
+        }
+        winner_metrics = {
+            'drift': winner['drift'],
+            'max_abs_M': winner['max_abs_M'],
+            'volume': winner['volume'],
+            'carbon': winner['carbon'],
+        }
+        plot_design_card(
+            nodes, elements, d,
+            params=winner_params_dict,
+            metrics=winner_metrics,
+            outpath=card_path,
+            sections_catalog=TIMBER_SECTIONS,
+        )
+        
+        # Also create design cards for a few more Pareto designs
+        print("Creating design cards for top Pareto designs...")
+        for i, (idx, row) in enumerate(pareto_df.nsmallest(3, 'volume').iterrows()):
+            if i == 0:
+                continue  # Already did winner
+            
+            # Rebuild model for this design
+            design_params = PortalParams(
+                span=row['span'],
+                height=row['height'],
+                brace=int(row['brace']),
+                sec_col=int(row['sec_col']),
+                sec_beam=int(row['sec_beam']),
+                sec_brace=int(row['sec_brace']),
+                udl_w=row['udl_w'],
+                wind_P=row['wind_P'],
+                shipping_limit=row['shipping_limit'],
+            )
+            
+            nodes_i, elements_i, fixed_i, udl_i, loads_i = make_portal(
+                design_params, DEFAULT_MATERIAL, TIMBER_SECTIONS
+            )
+            K_i = assemble_global_K(nodes_i, elements_i)
+            F_i = assemble_element_loads_global(nodes_i, elements_i, udl_i)
+            for node_id, load_vec in loads_i.items():
+                F_i[dof_index(node_id, 0)] += load_vec[0]
+                F_i[dof_index(node_id, 1)] += load_vec[1]
+                F_i[dof_index(node_id, 2)] += load_vec[2]
+            d_i, _, _ = solve_linear(K_i, F_i, fixed_i)
+            
+            card_path_i = f'artifacts/design_card_{i+1}.png'
+            plot_design_card(
+                nodes_i, elements_i, d_i,
+                params={
+                    'span': row['span'],
+                    'height': row['height'],
+                    'brace': int(row['brace']),
+                    'sec_col': int(row['sec_col']),
+                    'sec_beam': int(row['sec_beam']),
+                    'sec_brace': int(row['sec_brace']),
+                    'udl_w': row['udl_w'],
+                    'wind_P': row['wind_P'],
+                },
+                metrics={
+                    'drift': row['drift'],
+                    'max_abs_M': row['max_abs_M'],
+                    'volume': row['volume'],
+                    'carbon': row['carbon'],
+                },
+                outpath=card_path_i,
+                sections_catalog=TIMBER_SECTIONS,
+            )
+        
+        print(f"Winner design visualization saved to:")
+        print(f"  - {frame_path} (basic)")
+        print(f"  - {card_path} (design card)")
         print(f"  Volume: {winner['volume']:.4f} m³")
         print(f"  Drift: {winner['drift']*1000:.2f} mm")
         print()
@@ -449,14 +555,19 @@ This will generate:
     print()
     print("Generated files:")
     print(f"  [CSV] {csv_path} ({len(df)} designs)")
-    print(f"  [PLOT] {plot_path} (Pareto frontier)")
+    print(f"  [PLOT] {plot_path} (Pareto frontier - basic)")
+    print(f"  [PLOT] {enhanced_path} (Pareto frontier - enhanced)")
+    print(f"  [PLOT] {comparison_path} (Pareto with frame thumbnails)")
     print(f"  [MD] {md_path} (Top 10 designs)")
     if len(pareto_df) > 0:
-        print(f"  [FRAME] {frame_path} (Winner design)")
+        print(f"  [FRAME] {frame_path} (Winner frame - basic)")
+        print(f"  [CARD] {card_path} (Winner design card)")
+        print(f"  [CARD] artifacts/design_card_*.png (Additional design cards)")
     print()
     print("Next steps:")
-    print("  - Review Pareto plot to understand trade-offs")
-    print("  - Check top10.md for best designs")
+    print("  - Review pareto_comparison.png for visual overview")
+    print("  - Check winner_design_card.png for detailed winner info")
+    print("  - Review top10.md for best designs")
     print("  - Use results.csv for further analysis")
     print("  - Day 4: Train ML surrogate on results.csv")
     print()
