@@ -22,6 +22,10 @@ Think of it as a mini version of commercial software like SAP2000, ETABS, or ANS
 ✅ **Post-processing**: Extract reactions, internal forces, moments, and engineering metrics  
 ✅ **Validated Results**: Tested against closed-form analytical solutions  
 ✅ **Visualization**: Matplotlib plots showing deformed shapes and force diagrams  
+✅ **Design Space Exploration**: Generate and evaluate hundreds of design variants  
+✅ **Pareto Frontier Analysis**: Identify optimal trade-offs between competing objectives  
+✅ **Parametric Design**: Material/section catalogs and parametric model generation  
+✅ **Batch Evaluation**: Automated evaluation pipeline for design optimization  
 
 ## Installation
 
@@ -86,6 +90,16 @@ py demos/run_portal_frame.py
 py demos/run_postprocessing.py
 ```
 
+**Design Space Exploration (Day 3):**
+```powershell
+py demos/run_portal_search.py --n 500 --seed 42
+```
+This generates:
+- `artifacts/results.csv` - All design results
+- `artifacts/pareto.png` - Pareto frontier plot
+- `artifacts/top10.md` - Top 10 optimal designs
+- `artifacts/winner_frame.png` - Deformed shape visualization
+
 ### Run Tests
 
 ```powershell
@@ -101,6 +115,8 @@ pytest tests/test_portal_frame.py -v
 pytest tests/test_portal_frame_equilibrium.py -v
 pytest tests/test_postprocessing.py -v
 pytest tests/test_invariants.py -v
+pytest tests/test_explore.py -v
+pytest tests/test_search_pipeline_smoke.py -v
 ```
 
 ## Project Structure
@@ -115,7 +131,10 @@ STRUCTURECRAFT/
 │   ├── solve.py         # Linear solver with boundary conditions
 │   ├── post.py          # Post-processing (reactions, forces, moments)
 │   ├── checks.py        # Engineering checks
-│   └── ...
+│   ├── catalog.py       # Material and section catalogs (Day 3)
+│   ├── explore.py       # Parametric design generation and evaluation (Day 3)
+│   ├── pareto.py        # Pareto frontier analysis (Day 3)
+│   └── viz.py           # Visualization functions (Day 3)
 ├── tests/               # Test suite
 │   ├── test_cantilever.py
 │   ├── test_simply_supported.py
@@ -123,14 +142,22 @@ STRUCTURECRAFT/
 │   ├── test_portal_frame.py
 │   ├── test_portal_frame_equilibrium.py
 │   ├── test_postprocessing.py
-│   └── test_invariants.py
+│   ├── test_invariants.py
+│   ├── test_explore.py
+│   └── test_search_pipeline_smoke.py
 ├── demos/               # Example scripts
 │   ├── run_single_case.py
 │   ├── run_simply_supported.py
 │   ├── run_udl_beam.py
 │   ├── run_udl_validation.py
 │   ├── run_portal_frame.py
-│   └── run_postprocessing.py
+│   ├── run_postprocessing.py
+│   └── run_portal_search.py  # Design space exploration (Day 3)
+├── artifacts/            # Generated results (Day 3)
+│   ├── results.csv
+│   ├── pareto.png
+│   ├── top10.md
+│   └── winner_frame.png
 └── pyproject.toml       # Package configuration
 ```
 
@@ -170,6 +197,29 @@ STRUCTURECRAFT/
 - ✅ Reaction extraction at supports
 - ✅ Internal force and moment diagrams
 - ✅ Engineering metrics (drift, maximum moments, etc.)
+
+### ✅ Day 3 Deliverables (Completed)
+
+**Design Space Exploration:**
+- ✅ Parametric portal frame generator (`make_portal`)
+- ✅ Material and section catalog (12 timber sections)
+- ✅ Variant sampling with fabrication constraints
+- ✅ Batch evaluation pipeline (hundreds of designs)
+- ✅ Metrics extraction (drift, moments, volume, carbon)
+
+**Pareto Frontier Analysis:**
+- ✅ Non-dominated sorting algorithm
+- ✅ Pareto-optimal design identification
+- ✅ Trade-off visualization (volume vs. drift)
+
+**Visualization:**
+- ✅ Pareto frontier plots
+- ✅ Deformed shape visualization
+- ✅ Design summaries (top 10 markdown report)
+
+**Results Export:**
+- ✅ CSV export for all design results
+- ✅ Ready for Day 4 ML training
 
 All tests pass and match closed-form analytical solutions within numerical tolerance.
 
@@ -232,6 +282,7 @@ reaction = R[1]  # 1000 N (upward)
 
 - **numpy**: Matrix operations and linear algebra
 - **matplotlib**: Visualization and plotting
+- **pandas**: Data analysis and CSV export (Day 3)
 - **pytest**: Testing framework (dev dependency)
 
 ## What's Next?
@@ -241,10 +292,12 @@ Future enhancements planned:
 - [x] Uniformly distributed loads (UDL) ✅
 - [x] Portal frames ✅
 - [x] Post-processing and visualization improvements ✅
+- [x] Design space exploration and Pareto analysis ✅
+- [ ] ML-guided design optimization (Day 4)
 - [ ] Multi-story structures
 - [ ] Dynamic analysis (modal, time-history)
 - [ ] Nonlinear analysis (material/geometric nonlinearity)
-- [ ] Optimization capabilities
+- [ ] Code compliance (AISC/NDS)
 - [ ] Export to CAD formats
 
 ## Learning Resources
@@ -253,6 +306,8 @@ This project implements concepts from:
 - **Finite Element Method (FEM)**: Matrix structural analysis
 - **Structural Mechanics**: Beam theory, Euler-Bernoulli beams
 - **Linear Algebra**: Matrix operations, solving systems of equations
+- **Multi-Objective Optimization**: Pareto optimality and trade-off analysis
+- **Design Space Exploration**: Parametric design and batch evaluation
 
 ## License
 
@@ -264,5 +319,7 @@ This is a learning project. Feel free to explore, modify, and experiment!
 
 ---
 
-**Status**: ✅ Day 2 Complete - UDL, Portal Frames, and Post-processing validated
+**Status**: ✅ Day 3 Complete - Design Space Exploration, Pareto Analysis, and Visualization implemented
+
+See `planning_and_docs/day3.md` for detailed documentation of Day 3 implementation.
 
