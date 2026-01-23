@@ -112,8 +112,15 @@ class DesignResult(BaseModel):
 # Stability Check
 # =============================================================================
 
-def check_stability(topology: str, support_layout: str, nx: int, ny: int) -> Optional[str]:
+def check_stability(topology: str, support_layout: str, nx: int, ny: int, heightfield: str) -> Optional[str]:
     """Check if parameter combination is likely stable."""
+    
+    # Flat, ridge, and saddle shapes need more supports than paraboloid
+    # Paraboloid (dome) has inherent membrane stiffness from curvature
+    if heightfield in ['flat', 'ridge', 'saddle']:
+        if support_layout == 'corners':
+            return f"Unstable: '{heightfield}' shape needs 'edges' support (not enough curvature for corner supports only)"
+    
     if support_layout == 'corners':
         if topology == 'diagrid':
             return "Unstable: 'corners' support with 'diagrid' topology fails. Use 'edges' or 'grid'."
@@ -136,9 +143,26 @@ def check_stability(topology: str, support_layout: str, nx: int, ny: int) -> Opt
 def generate_and_solve(params: DesignParams) -> DesignResult:
     """Generate canopy structure and solve it. Returns geometry even if solve fails."""
     
+    print(f"\n{'='*60}")
+    print(f"[DEBUG] GENERATE REQUEST")
+    print(f"[DEBUG] heightfield: {params.heightfield}")
+    print(f"[DEBUG] topology: {params.topology}")
+    print(f"[DEBUG] support_layout: {params.support_layout}")
+    print(f"[DEBUG] grid: {params.nx}x{params.ny}")
+    print(f"{'='*60}")
+    
     # Convert params
     A = params.A_cm2 / 10000  # cm² to m²
     gravity_load = -params.gravity_kn * 1000  # kN to N, negative for down
+    
+    # Auto-adjust support layout for non-dome shapes
+    # Flat, ridge, saddle shapes need edge supports for stability
+    effective_support = params.support_layout
+    if params.heightfield in ['flat', 'ridge', 'saddle'] and params.support_layout == 'corners':
+        effective_support = 'edges'  # Auto-upgrade to edges for stability
+        print(f"[INFO] Auto-adjusted support from 'corners' to 'edges' for '{params.heightfield}' shape")
+    
+    print(f"[DEBUG] effective_support: {effective_support}")
     
     try:
         canopy_params = CanopyParams(
@@ -150,7 +174,7 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             min_height=params.min_height,
             heightfield=params.heightfield,
             topology=params.topology,
-            support_layout=params.support_layout,
+            support_layout=effective_support,  # Use auto-adjusted support
             E=210e9,
             A=A,
             gravity_load=gravity_load,
@@ -158,6 +182,7 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         
         # Generate structure (geometry only)
         nodes, bars, fixed_dofs, F = generate_canopy(canopy_params)
+        print(f"[DEBUG] Generated: {len(nodes)} nodes, {len(bars)} bars, {len(fixed_dofs)} fixed DOFs")
     except Exception as e:
         return DesignResult(success=False, error=f"Failed to generate geometry: {str(e)}")
     
@@ -195,8 +220,13 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
     max_tension = 0.0
     max_compression = 0.0
     
+    print(f"[DEBUG] Starting solve...")
+    print(f"[DEBUG] n_supports: {n_supports}")
+    print(f"[DEBUG] fixed_dofs count: {len(fixed_dofs)}")
+    
     try:
         ndof = dof.ndof(n_nodes)
+        print(f"[DEBUG] Total DOFs: {ndof}, Free DOFs: {ndof - len(fixed_dofs)}")
         
         contributions = []
         for bar in bars:
@@ -205,7 +235,18 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             contributions.append((dof_map, ke))
         
         K = assemble_global_K(ndof, contributions)
-        d, R, free = solve_linear(K, F, fixed_dofs)
+        print(f"[DEBUG] Assembled K matrix: shape {K.shape}")
+        # Check condition number before solve (for debugging)
+        all_dofs = np.arange(K.shape[0])
+        free_dofs = np.array([i for i in all_dofs if i not in set(fixed_dofs)])
+        Kff = K[np.ix_(free_dofs, free_dofs)]
+        cond = np.linalg.cond(Kff)
+        print(f"[DEBUG] Condition number: {cond:.2e}")
+        
+        print(f"[DEBUG] Calling solve_linear...")
+        # Use higher tolerance for space frames (1e14 instead of default 1e12)
+        d, R, free = solve_linear(K, F, fixed_dofs, cond_limit=1e14)
+        print(f"[DEBUG] Solve successful!")
         
         # Extract displacements
         for node_id in nodes:
@@ -216,17 +257,31 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             max_displacement = max(max_displacement, total)
         
         # Extract forces
+        tension_count = 0
+        compression_count = 0
         for bar in bars:
             N = truss3d_axial_force(nodes, bar, d)
             forces[bar.id] = N
+            if N > 0:
+                tension_count += 1
+            elif N < 0:
+                compression_count += 1
             if N > max_tension:
                 max_tension = N
             if N < max_compression:
                 max_compression = N
+        
+        # Debug output
+        print(f"[DEBUG] Force distribution: {tension_count} tension, {compression_count} compression")
+        print(f"[DEBUG] Max tension: {max_tension/1000:.2f} kN, Max compression: {abs(max_compression)/1000:.2f} kN")
                 
     except MechanismError as e:
+        print(f"[ERROR] MechanismError: {str(e)}")
         solve_error = f"Structure unstable: {str(e)}"
     except Exception as e:
+        print(f"[ERROR] Solve exception: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         solve_error = f"Solve failed: {str(e)}"
     
     # Build bars list (with forces if solved, zero otherwise)

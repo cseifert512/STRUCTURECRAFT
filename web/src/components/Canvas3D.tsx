@@ -32,12 +32,16 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
     return map
   }, [nodes])
   
-  // Calculate force range for color mapping
+  // Calculate force range for color mapping (separate for tension and compression)
   const forceRange = useMemo(() => {
-    if (bars.length === 0) return { min: 0, max: 1 }
+    if (bars.length === 0) return { maxTension: 1, maxCompression: 1 }
     const forces = bars.map(b => b.force)
-    const maxAbs = Math.max(...forces.map(Math.abs), 0.001)
-    return { min: -maxAbs, max: maxAbs }
+    const tensions = forces.filter(f => f > 0)
+    const compressions = forces.filter(f => f < 0)
+    return {
+      maxTension: tensions.length > 0 ? Math.max(...tensions) : 1,
+      maxCompression: compressions.length > 0 ? Math.abs(Math.min(...compressions)) : 1,
+    }
   }, [bars])
   
   // Calculate center of structure to center the model
@@ -55,14 +59,16 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
   const getBarColor = (force: number) => {
     if (!colorByForce) return COLORS.neutral
     
-    const t = force / forceRange.max
     if (force > 0) {
-      // Tension - interpolate from neutral to tension color
-      return COLORS.neutral.clone().lerp(COLORS.tension, Math.abs(t))
-    } else {
-      // Compression - interpolate from neutral to compression color
-      return COLORS.neutral.clone().lerp(COLORS.compression, Math.abs(t))
+      // Tension (positive) - red, scale by max tension
+      const intensity = Math.min(force / forceRange.maxTension, 1)
+      return COLORS.neutral.clone().lerp(COLORS.tension, 0.3 + intensity * 0.7)
+    } else if (force < 0) {
+      // Compression (negative) - blue, scale by max compression  
+      const intensity = Math.min(Math.abs(force) / forceRange.maxCompression, 1)
+      return COLORS.neutral.clone().lerp(COLORS.compression, 0.3 + intensity * 0.7)
     }
+    return COLORS.neutral
   }
   
   // Transform coordinates: engineering (X, Y, Z-up) to Three.js (X, Z, Y-up)

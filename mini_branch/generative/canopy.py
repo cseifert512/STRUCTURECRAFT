@@ -147,8 +147,13 @@ def _compute_heightfield(
     h_range = params.max_height - params.min_height
     
     if params.heightfield == 'flat':
-        # Constant height
-        return params.max_height
+        # Nearly flat with subtle crown for structural stability
+        # A truly flat truss under transverse load is a mechanism in linear analysis
+        # Adding ~5% crown (center higher than edges) provides membrane action
+        r2 = xn**2 + yn**2
+        crown_factor = 0.05  # 5% of height range as subtle crown
+        subtle_crown = (1 - r2 / 2) * h_range * crown_factor
+        return params.max_height + subtle_crown
     
     elif params.heightfield == 'paraboloid':
         # Dome shape: highest at center, lower at edges
@@ -160,8 +165,9 @@ def _compute_heightfield(
     
     elif params.heightfield == 'ridge':
         # Peaked along Y centerline (like a tent ridge along X)
+        # Uses parabolic curve (not linear) for better structural behavior
         # Highest when yn=0, lowest at yn=+-1
-        z_normalized = 1 - abs(yn)
+        z_normalized = 1 - yn**2  # Parabolic, not linear
         return params.min_height + h_range * z_normalized
     
     elif params.heightfield == 'saddle':
