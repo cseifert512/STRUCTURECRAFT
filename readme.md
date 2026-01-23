@@ -26,6 +26,8 @@ Think of it as a mini version of commercial software like SAP2000, ETABS, or ANS
 ✅ **Pareto Frontier Analysis**: Identify optimal trade-offs between competing objectives  
 ✅ **Parametric Design**: Material/section catalogs and parametric model generation  
 ✅ **Batch Evaluation**: Automated evaluation pipeline for design optimization  
+✅ **ML Surrogate Model**: RandomForest model to accelerate design exploration  
+✅ **Guided Search**: ML-guided candidate screening with physics verification  
 
 ## Installation
 
@@ -100,6 +102,18 @@ This generates:
 - `artifacts/top10.md` - Top 10 optimal designs
 - `artifacts/winner_frame.png` - Deformed shape visualization
 
+**ML-Guided Search (Day 4):**
+```powershell
+py demos/train_surrogate.py
+py demos/guided_search.py
+```
+This generates:
+- `artifacts/model.joblib` - Trained surrogate model
+- `artifacts/pred_vs_actual.png` - Model accuracy plot
+- `artifacts/feature_importance.png` - Feature importances
+- `artifacts/guided_vs_random.png` - Guided vs random comparison
+- `artifacts/guided_results.csv` - ML-guided search results
+
 ### Run Tests
 
 ```powershell
@@ -117,6 +131,7 @@ pytest tests/test_postprocessing.py -v
 pytest tests/test_invariants.py -v
 pytest tests/test_explore.py -v
 pytest tests/test_search_pipeline_smoke.py -v
+pytest tests/test_ml_smoke.py -v
 ```
 
 ## Project Structure
@@ -144,7 +159,8 @@ STRUCTURECRAFT/
 │   ├── test_postprocessing.py
 │   ├── test_invariants.py
 │   ├── test_explore.py
-│   └── test_search_pipeline_smoke.py
+│   ├── test_search_pipeline_smoke.py
+│   └── test_ml_smoke.py      # ML pipeline tests (Day 4)
 ├── demos/               # Example scripts
 │   ├── run_single_case.py
 │   ├── run_simply_supported.py
@@ -152,12 +168,17 @@ STRUCTURECRAFT/
 │   ├── run_udl_validation.py
 │   ├── run_portal_frame.py
 │   ├── run_postprocessing.py
-│   └── run_portal_search.py  # Design space exploration (Day 3)
-├── artifacts/            # Generated results (Day 3)
-│   ├── results.csv
-│   ├── pareto.png
-│   ├── top10.md
-│   └── winner_frame.png
+│   ├── run_portal_search.py  # Design space exploration (Day 3)
+│   ├── _ml_utils.py          # ML helper functions (Day 4)
+│   ├── train_surrogate.py    # Train ML model (Day 4)
+│   └── guided_search.py      # ML-guided search (Day 4)
+├── artifacts/            # Generated results
+│   ├── results.csv           # Design evaluation results
+│   ├── pareto.png            # Pareto frontier plot
+│   ├── top10.md              # Top 10 designs summary
+│   ├── model.joblib          # Trained surrogate model (Day 4)
+│   ├── guided_vs_random.png  # ML vs random comparison (Day 4)
+│   └── feature_importance.png # Feature importances (Day 4)
 └── pyproject.toml       # Package configuration
 ```
 
@@ -221,6 +242,29 @@ STRUCTURECRAFT/
 - ✅ CSV export for all design results
 - ✅ Ready for Day 4 ML training
 
+### ✅ Day 4 Deliverables (Completed)
+
+**ML Surrogate Model:**
+- ✅ Data cleaning and feature engineering (`_ml_utils.py`)
+- ✅ RandomForest regressor for drift prediction
+- ✅ Train/test split with metrics (MAE, R²)
+- ✅ Model persistence (`model.joblib`)
+
+**Guided Search:**
+- ✅ Candidate pool generation (5000 designs)
+- ✅ Surrogate scoring (instant predictions)
+- ✅ Top-K selection and physics verification
+- ✅ Random baseline comparison
+
+**Visualization & Artifacts:**
+- ✅ Predicted vs actual scatter plot
+- ✅ Feature importance bar chart
+- ✅ Guided vs random comparison plot
+
+**Documentation:**
+- ✅ Engineering notes (`ENGINEERING_NOTES.md`)
+- ✅ ML smoke tests (`test_ml_smoke.py`)
+
 All tests pass and match closed-form analytical solutions within numerical tolerance.
 
 ## How It Works
@@ -282,7 +326,9 @@ reaction = R[1]  # 1000 N (upward)
 
 - **numpy**: Matrix operations and linear algebra
 - **matplotlib**: Visualization and plotting
-- **pandas**: Data analysis and CSV export (Day 3)
+- **pandas**: Data analysis and CSV export
+- **scikit-learn**: Machine learning (RandomForest surrogate model)
+- **joblib**: Model persistence
 - **pytest**: Testing framework (dev dependency)
 
 ## What's Next?
@@ -293,7 +339,7 @@ Future enhancements planned:
 - [x] Portal frames ✅
 - [x] Post-processing and visualization improvements ✅
 - [x] Design space exploration and Pareto analysis ✅
-- [ ] ML-guided design optimization (Day 4)
+- [x] ML-guided design optimization ✅
 - [ ] Multi-story structures
 - [ ] Dynamic analysis (modal, time-history)
 - [ ] Nonlinear analysis (material/geometric nonlinearity)
@@ -308,6 +354,7 @@ This project implements concepts from:
 - **Linear Algebra**: Matrix operations, solving systems of equations
 - **Multi-Objective Optimization**: Pareto optimality and trade-off analysis
 - **Design Space Exploration**: Parametric design and batch evaluation
+- **Machine Learning**: Surrogate modeling for engineering optimization
 
 ## License
 
@@ -319,7 +366,7 @@ This is a learning project. Feel free to explore, modify, and experiment!
 
 ---
 
-**Status**: ✅ Day 3 Complete - Design Space Exploration, Pareto Analysis, and Visualization implemented
+**Status**: ✅ Day 4 Complete - ML-guided design exploration with surrogate model
 
-See `planning_and_docs/day3.md` for detailed documentation of Day 3 implementation.
+See `engineering_notes.md` for technical documentation and `planning_and_docs/` for daily implementation notes.
 
