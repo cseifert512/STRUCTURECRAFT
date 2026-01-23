@@ -22,7 +22,12 @@ from mini_branch.generative.canopy import compute_length_bins
 from mini_branch.v3d.elements import truss3d_global_stiffness, truss3d_axial_force, element_geometry_3d
 from mini_branch.kernel.dof import DOFManager
 from mini_branch.kernel.assemble import assemble_global_K
-from mini_branch.kernel.solve import solve_linear, MechanismError
+from mini_branch.kernel.solve import solve_linear, solve_pdelta, MechanismError, ConvergenceError
+from mini_branch.kernel.buckling import build_global_Kg, critical_buckling_factor, check_member_buckling
+from mini_branch.kernel.modal import build_lumped_mass_matrix, natural_frequencies
+from mini_branch.kernel.connections import ConnectionType, CONNECTION_STIFFNESS
+from mini_branch.checks.timber import DOUGLAS_FIR_CAPACITY, axial_utilization
+from mini_branch.checks.steel import STEEL_SECTIONS, check_steel_member
 import numpy as np
 import pandas as pd
 
@@ -60,6 +65,14 @@ class DesignParams(BaseModel):
     support_layout: str = Field("edges", description="Support: edges, corners, perimeter_4")
     A_cm2: float = Field(8.0, ge=3.0, le=20.0, description="Cross-section area (cm²)")
     gravity_kn: float = Field(50.0, ge=20.0, le=150.0, description="Gravity load (kN)")
+    # Material options
+    material_type: str = Field("timber", description="Material: timber or steel")
+    steel_section: str = Field("HSS4x4x1/4", description="Steel section if material=steel")
+    # Connection type
+    connection_type: str = Field("pinned", description="Connection type: pinned, semi_rigid, rigid")
+    # Advanced analysis options
+    pdelta_enabled: bool = Field(False, description="Enable P-Delta (second-order) analysis")
+    modal_enabled: bool = Field(False, description="Enable modal (natural frequency) analysis")
 
 
 class NodeData(BaseModel):
@@ -77,6 +90,8 @@ class BarData(BaseModel):
     nj: int
     length: float
     force: float
+    utilization: Optional[float] = None  # Stress utilization ratio (< 1.0 = pass)
+    status: Optional[str] = None         # "PASS" or "FAIL"
 
 
 class MetricsData(BaseModel):
@@ -96,6 +111,21 @@ class MetricsData(BaseModel):
     max_member_length: float
     max_member_length_mm: float
     min_member_length: float
+    # Engineering checks
+    buckling_factor: Optional[float] = None       # Critical load factor (> 1.0 = safe)
+    max_utilization: Optional[float] = None       # Worst member stress ratio
+    n_failing_members: Optional[int] = None       # Count of members with util > 1.0
+    critical_member_id: Optional[int] = None      # ID of worst member
+    # P-Delta analysis
+    pdelta_iterations: Optional[int] = None       # Iterations to converge (0 = linear)
+    pdelta_amplification: Optional[float] = None  # Displacement amplification factor
+    # Modal analysis
+    natural_frequencies_hz: Optional[List[float]] = None  # First N natural frequencies in Hz
+    # Material info
+    material_type: Optional[str] = None
+    steel_section_name: Optional[str] = None
+    # Connection info
+    connection_type: Optional[str] = None
 
 
 class DesignResult(BaseModel):
@@ -273,10 +303,17 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
     max_displacement = 0.0
     max_tension = 0.0
     max_compression = 0.0
+    member_utils = {}
+    buckling_factor = None
+    pdelta_iterations = None
+    pdelta_amplification = None
+    natural_freqs = None
     
     print(f"[DEBUG] Starting solve...")
     print(f"[DEBUG] n_supports: {n_supports}")
     print(f"[DEBUG] fixed_dofs count: {len(fixed_dofs)}")
+    print(f"[DEBUG] pdelta_enabled: {params.pdelta_enabled}")
+    print(f"[DEBUG] modal_enabled: {params.modal_enabled}")
     
     try:
         ndof = dof.ndof(n_nodes)
@@ -297,9 +334,31 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         cond = np.linalg.cond(Kff)
         print(f"[DEBUG] Condition number: {cond:.2e}")
         
-        print(f"[DEBUG] Calling solve_linear...")
+        print(f"[DEBUG] Calling solver...")
         # Use higher tolerance for space frames (1e14 instead of default 1e12)
-        d, R, free = solve_linear(K, F, fixed_dofs, cond_limit=1e14)
+        
+        if params.pdelta_enabled:
+            # P-Delta (second-order) analysis
+            print(f"[DEBUG] Using P-Delta analysis...")
+            d, R, pdelta_iterations, pdelta_amplification = solve_pdelta(
+                K=K,
+                F=F,
+                fixed_dofs=fixed_dofs,
+                nodes=nodes,
+                bars=bars,
+                dof_manager=dof,
+                element_geometry_func=element_geometry_3d,
+                axial_force_func=truss3d_axial_force,
+                build_kg_func=build_global_Kg,
+                max_iter=10,
+                tol=1e-4,
+                cond_limit=1e14
+            )
+            print(f"[DEBUG] P-Delta converged in {pdelta_iterations} iterations, amplification={pdelta_amplification:.3f}")
+        else:
+            # Linear analysis
+            d, R, free = solve_linear(K, F, fixed_dofs, cond_limit=1e14)
+            
         print(f"[DEBUG] Solve successful!")
         
         # Extract displacements
@@ -328,30 +387,107 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         # Debug output
         print(f"[DEBUG] Force distribution: {tension_count} tension, {compression_count} compression")
         print(f"[DEBUG] Max tension: {max_tension/1000:.2f} kN, Max compression: {abs(max_compression)/1000:.2f} kN")
+        
+        # =====================================================================
+        # ENGINEERING CHECKS: Buckling and Utilization
+        # =====================================================================
+        
+        # Compute member utilizations (material-dependent)
+        member_utils = {}
+        for bar in bars:
+            N = forces.get(bar.id, 0.0)
+            L, _, _, _ = element_geometry_3d(nodes, bar)
+            
+            if params.material_type == 'steel':
+                # Steel check per AISC
+                section = STEEL_SECTIONS.get(params.steel_section, STEEL_SECTIONS['HSS4x4x1/4'])
+                result = check_steel_member(N, section, L, K=1.0)
+                member_utils[bar.id] = {
+                    'utilization': result['combined_util'],
+                    'status': result['status']
+                }
+            else:
+                # Timber check (default)
+                util = axial_utilization(N, bar.A, DOUGLAS_FIR_CAPACITY)
+                member_utils[bar.id] = {
+                    'utilization': util,
+                    'status': 'PASS' if util <= 1.0 else 'FAIL'
+                }
+        
+        # Buckling analysis (only if compression members exist)
+        buckling_factor = None
+        if max_compression < 0:
+            try:
+                Kg = build_global_Kg(
+                    nodes, bars, forces, dof, element_geometry_3d
+                )
+                buckling_factor = critical_buckling_factor(K, Kg, fixed_dofs)
+                if buckling_factor == float('inf'):
+                    buckling_factor = 999.0  # Cap for JSON serialization
+                print(f"[DEBUG] Buckling factor: {buckling_factor:.2f}")
+            except Exception as e:
+                print(f"[DEBUG] Buckling analysis skipped: {e}")
+                buckling_factor = None
+        
+        # Modal analysis (if enabled)
+        if params.modal_enabled:
+            try:
+                # Use material-appropriate density
+                if params.material_type == 'steel':
+                    density = 7850.0  # kg/m³ for steel
+                else:
+                    density = 500.0   # kg/m³ for timber
+                
+                M = build_lumped_mass_matrix(
+                    nodes, bars, density, dof, element_geometry_3d
+                )
+                freqs, _ = natural_frequencies(K, M, fixed_dofs, n_modes=5)
+                natural_freqs = [round(f, 3) for f in freqs.tolist()]
+                print(f"[DEBUG] Natural frequencies (Hz): {natural_freqs}")
+            except Exception as e:
+                print(f"[DEBUG] Modal analysis failed: {e}")
+                natural_freqs = None
                 
     except MechanismError as e:
         print(f"[ERROR] MechanismError: {str(e)}")
         solve_error = f"Structure unstable: {str(e)}"
+    except ConvergenceError as e:
+        print(f"[ERROR] ConvergenceError: {str(e)}")
+        solve_error = f"P-Delta did not converge: {str(e)}"
     except Exception as e:
         print(f"[ERROR] Solve exception: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         solve_error = f"Solve failed: {str(e)}"
     
-    # Build bars list (with forces if solved, zero otherwise)
+    # Build bars list (with forces and utilization if solved)
     bars_list = []
     for bar in bars:
         L, _, _, _ = element_geometry_3d(nodes, bar)
+        util_data = member_utils.get(bar.id, {})
         bars_list.append(BarData(
             id=bar.id,
             ni=bar.ni,
             nj=bar.nj,
             length=round(L, 4),
-            force=round(forces.get(bar.id, 0), 2)
+            force=round(forces.get(bar.id, 0), 2),
+            utilization=round(util_data.get('utilization', 0), 3) if util_data else None,
+            status=util_data.get('status') if util_data else None,
         ))
     
     # Length bins
     bins = compute_length_bins(lengths, tolerance=0.010)
+    
+    # Compute utilization summary
+    max_utilization = None
+    n_failing_members = None
+    critical_member_id = None
+    if member_utils:
+        utils = [(bid, data['utilization']) for bid, data in member_utils.items()]
+        max_util_entry = max(utils, key=lambda x: x[1])
+        max_utilization = round(max_util_entry[1], 3)
+        critical_member_id = max_util_entry[0]
+        n_failing_members = sum(1 for _, u in utils if u > 1.0)
     
     # Metrics (partial if solve failed)
     metrics = MetricsData(
@@ -370,6 +506,21 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         max_member_length=round(max(L for _, L in lengths), 4),
         max_member_length_mm=round(max(L for _, L in lengths) * 1000, 1),
         min_member_length=round(min(L for _, L in lengths), 4),
+        # Engineering checks
+        buckling_factor=round(buckling_factor, 2) if buckling_factor is not None else None,
+        max_utilization=max_utilization,
+        n_failing_members=n_failing_members,
+        critical_member_id=critical_member_id,
+        # P-Delta results
+        pdelta_iterations=pdelta_iterations,
+        pdelta_amplification=round(pdelta_amplification, 3) if pdelta_amplification is not None else None,
+        # Modal results
+        natural_frequencies_hz=natural_freqs,
+        # Material info
+        material_type=params.material_type,
+        steel_section_name=params.steel_section if params.material_type == 'steel' else None,
+        # Connection info
+        connection_type=params.connection_type,
     )
     
     return DesignResult(

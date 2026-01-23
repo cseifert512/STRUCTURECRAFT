@@ -1,24 +1,48 @@
 # mini_branch/kernel - Dimension-agnostic structural analysis core
-"""
-KERNEL: THE DIMENSION-AGNOSTIC FOUNDATION
-==========================================
-
-This package contains the core abstractions that work for ANY structural
-analysis: 2D frames, 3D trusses, 3D frames, etc.
-
-The key insight: assembly and solving don't care about dimensions.
-They just need:
-- A way to map (node_id, local_dof) → global_dof_index
-- Element stiffness matrices (any size)
-- Fixed DOF lists
-- Load vectors
-
-The ELEMENT implementations (Frame2D, Truss3D, etc.) are dimension-specific,
-but the kernel plumbing is universal.
-"""
+"""Core abstractions for structural analysis: DOF management, assembly, solving, buckling, modal, connections."""
 
 from .dof import DOFManager
-from .solve import solve_linear, MechanismError
+from .assemble import assemble_global_K, assemble_global_F, add_nodal_load
+from .solve import solve_linear, solve_pdelta, MechanismError, ConvergenceError
+from .buckling import (
+    geometric_stiffness_truss3d,
+    build_global_Kg,
+    critical_buckling_factor,
+    member_slenderness,
+    euler_buckling_load,
+    euler_buckling_stress,
+    check_member_buckling,
+)
+from .modal import (
+    build_lumped_mass_matrix,
+    build_consistent_mass_matrix,
+    natural_frequencies,
+    modal_participation_factors,
+    effective_modal_mass,
+)
+from .connections import (
+    ConnectionType,
+    CONNECTION_STIFFNESS,
+    Connection,
+    fixity_factor,
+    modify_frame_stiffness_for_connections,
+    add_rotational_spring,
+    compute_connection_moments,
+    create_connection_matrix,
+    default_rigid_connections,
+    default_pinned_connections,
+)
 
-__all__ = ['DOFManager', 'solve_linear', 'MechanismError']
-
+__all__ = [
+    'DOFManager',
+    'assemble_global_K', 'assemble_global_F', 'add_nodal_load',
+    'solve_linear', 'solve_pdelta', 'MechanismError', 'ConvergenceError',
+    'geometric_stiffness_truss3d', 'build_global_Kg', 'critical_buckling_factor',
+    'member_slenderness', 'euler_buckling_load', 'euler_buckling_stress', 'check_member_buckling',
+    'build_lumped_mass_matrix', 'build_consistent_mass_matrix', 'natural_frequencies',
+    'modal_participation_factors', 'effective_modal_mass',
+    'ConnectionType', 'CONNECTION_STIFFNESS', 'Connection', 'fixity_factor',
+    'modify_frame_stiffness_for_connections', 'add_rotational_spring',
+    'compute_connection_moments', 'create_connection_matrix',
+    'default_rigid_connections', 'default_pinned_connections',
+]

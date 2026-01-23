@@ -1,372 +1,321 @@
-# STRUCTURECRAFT - Mini Branch
+# StructureCraft - 3D Spaceframe Design Engine
 
-A lightweight finite element analysis (FEA) framework for 2D frame structures, built from scratch to learn structural engineering and computational mechanics.
+A structural analysis and design exploration platform for 3D spaceframes and canopy structures. Built with a modern tech stack: **Next.js frontend → FastAPI backend → mini_branch FEM engine**.
 
 ## What is This?
 
-This is a **structural analysis engine** that can analyze beams, frames, and other 2D structures. It uses the **Finite Element Method (FEM)** to calculate:
+StructureCraft is a **structural design tool** that enables rapid exploration of 3D canopy and spaceframe designs. It combines:
 
-- **Displacements**: How much structures deform under loads
-- **Reactions**: Forces at supports
-- **Internal forces**: Stresses and moments within elements
-
-Think of it as a mini version of commercial software like SAP2000, ETABS, or ANSYS - but built for learning and understanding the fundamentals.
+- **Finite Element Analysis (FEM)**: Linear elastic analysis for 2D frames and 3D trusses
+- **Design Exploration**: Generate and evaluate hundreds of design variants
+- **Engineering Code Checks**: Timber design checks per CSA O86 / NDS
+- **Buckling Analysis**: Eigenvalue buckling for stability assessment
+- **Interactive 3D Visualization**: Real-time WebGL rendering with Three.js
 
 ## Features
 
+### Structural Analysis
 ✅ **2D Frame Elements**: Euler-Bernoulli beam elements with axial, shear, and bending  
+✅ **3D Truss Elements**: Axial-only members with direction cosine transformations  
 ✅ **Linear Static Analysis**: Solve `K × d = F` for displacements  
-✅ **Boundary Conditions**: Support constraints (pinned, fixed, etc.)  
-✅ **Uniformly Distributed Loads (UDL)**: Support for distributed loads on beam elements  
-✅ **Portal Frames**: Multi-element frame structures with combined loading  
-✅ **Post-processing**: Extract reactions, internal forces, moments, and engineering metrics  
-✅ **Validated Results**: Tested against closed-form analytical solutions  
-✅ **Visualization**: Matplotlib plots showing deformed shapes and force diagrams  
-✅ **Design Space Exploration**: Generate and evaluate hundreds of design variants  
-✅ **Pareto Frontier Analysis**: Identify optimal trade-offs between competing objectives  
-✅ **Parametric Design**: Material/section catalogs and parametric model generation  
-✅ **Batch Evaluation**: Automated evaluation pipeline for design optimization  
-✅ **ML Surrogate Model**: RandomForest model to accelerate design exploration  
-✅ **Guided Search**: ML-guided candidate screening with physics verification  
+✅ **Buckling Analysis**: Eigenvalue problem `(K - λKg)φ = 0` for critical load factors  
+✅ **Timber Code Checks**: Axial and combined utilization per NDS 3.9.2  
+✅ **Mechanism Detection**: Condition number checks to catch unstable structures  
+
+### Design Exploration
+✅ **Parametric Generation**: Canopy structures with configurable topology, shape, and supports  
+✅ **Batch Evaluation**: Evaluate hundreds of design variants automatically  
+✅ **Pareto Frontier**: Identify optimal trade-offs (volume vs displacement vs complexity)  
+✅ **ML Surrogate Model**: RandomForest for accelerated design screening  
+✅ **Guided Search**: ML-guided candidate selection with physics verification  
+
+### Web Application
+✅ **Interactive 3D Viewer**: Real-time canopy visualization with Three.js  
+✅ **Parameter Controls**: Sliders and dropdowns for design parameters  
+✅ **Engineering Metrics**: Displacement, forces, utilization, buckling factor  
+✅ **Color-Coded Members**: Visual feedback by force or utilization status  
+✅ **Export**: CSV cut lists and JSON model exports  
+
+## Tech Stack
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Next.js Frontend                      │
+│  React + TypeScript + Three.js + Zustand + Tailwind     │
+└─────────────────────────┬───────────────────────────────┘
+                          │ REST API
+┌─────────────────────────▼───────────────────────────────┐
+│                   FastAPI Backend                        │
+│        Pydantic models + async endpoints                 │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│                 mini_branch Engine                       │
+│   FEM solver + buckling + timber checks + generation    │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Installation
 
 ### Prerequisites
-- Python 3.10 or higher
+- Python 3.10+
+- Node.js 18+
 - pip
 
-### Setup
+### Backend Setup
 
-1. **Clone or navigate to the project directory:**
-   ```powershell
-   cd STRUCTURECRAFT
-   ```
-
-2. **Create a virtual environment (recommended):**
-   ```powershell
-   python -m venv .venv
-   .venv\Scripts\Activate.ps1  # On Windows PowerShell
-   ```
-
-3. **Install the package in editable mode:**
-   ```powershell
-   pip install -e .
-   ```
-
-4. **Install development dependencies (for testing):**
-   ```powershell
-   pip install -e ".[dev]"
-   ```
-
-## Quick Start
-
-### Run a Demo
-
-**Cantilever Beam:**
 ```powershell
-py demos/run_single_case.py
+cd STRUCTURECRAFT
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# Install Python dependencies
+pip install -e .
+pip install -r api/requirements.txt
 ```
 
-**Simply Supported Beam:**
+### Frontend Setup
+
 ```powershell
-py demos/run_simply_supported.py
+cd web
+npm install
 ```
 
-**Simply Supported Beam with UDL:**
+### Running the Application
+
+**Terminal 1 - Backend:**
 ```powershell
-py demos/run_udl_beam.py
+cd STRUCTURECRAFT
+uvicorn api.main:app --reload --port 8000
 ```
 
-**UDL Validation:**
+**Terminal 2 - Frontend:**
 ```powershell
-py demos/run_udl_validation.py
+cd STRUCTURECRAFT/web
+npm run dev
 ```
 
-**Portal Frame (Gravity + Lateral Loads):**
+Open http://localhost:3000 in your browser.
+
+## Quick Start - CLI Demos
+
+### Beam Analysis
 ```powershell
-py demos/run_portal_frame.py
+py demos/run_single_case.py          # Cantilever beam
+py demos/run_simply_supported.py     # Simply supported beam
+py demos/run_udl_beam.py             # Beam with distributed load
+py demos/run_portal_frame.py         # Portal frame
 ```
 
-**Post-processing Demo:**
+### 3D Canopy Analysis
 ```powershell
-py demos/run_postprocessing.py
+py demos/run_canopy_single.py        # Single canopy design
+py demos/run_canopy_search.py        # Batch canopy search
+py demos/run_space_truss.py          # 3D truss tetrahedron
 ```
 
-**Design Space Exploration (Day 3):**
+### Design Exploration
 ```powershell
 py demos/run_portal_search.py --n 500 --seed 42
-```
-This generates:
-- `artifacts/results.csv` - All design results
-- `artifacts/pareto.png` - Pareto frontier plot
-- `artifacts/top10.md` - Top 10 optimal designs
-- `artifacts/winner_frame.png` - Deformed shape visualization
-
-**ML-Guided Search (Day 4):**
-```powershell
 py demos/train_surrogate.py
 py demos/guided_search.py
 ```
-This generates:
-- `artifacts/model.joblib` - Trained surrogate model
-- `artifacts/pred_vs_actual.png` - Model accuracy plot
-- `artifacts/feature_importance.png` - Feature importances
-- `artifacts/guided_vs_random.png` - Guided vs random comparison
-- `artifacts/guided_results.csv` - ML-guided search results
 
 ### Run Tests
-
 ```powershell
-pytest tests/
-```
-
-Or run specific tests:
-```powershell
-pytest tests/test_cantilever.py -v
-pytest tests/test_simply_supported.py -v
-pytest tests/test_simply_supported_udl.py -v
-pytest tests/test_portal_frame.py -v
-pytest tests/test_portal_frame_equilibrium.py -v
-pytest tests/test_postprocessing.py -v
-pytest tests/test_invariants.py -v
-pytest tests/test_explore.py -v
-pytest tests/test_search_pipeline_smoke.py -v
-pytest tests/test_ml_smoke.py -v
+pytest tests/ -q
 ```
 
 ## Project Structure
 
 ```
 STRUCTURECRAFT/
-├── mini_branch/          # Main package
-│   ├── model.py         # Data models (Node, Frame2D)
-│   ├── elements.py      # Element stiffness matrices
-│   ├── assembly.py      # Global stiffness matrix assembly
-│   ├── loads.py         # Load assembly (point loads, UDL)
-│   ├── solve.py         # Linear solver with boundary conditions
-│   ├── post.py          # Post-processing (reactions, forces, moments)
-│   ├── checks.py        # Engineering checks
-│   ├── catalog.py       # Material and section catalogs (Day 3)
-│   ├── explore.py       # Parametric design generation and evaluation (Day 3)
-│   ├── pareto.py        # Pareto frontier analysis (Day 3)
-│   └── viz.py           # Visualization functions (Day 3)
-├── tests/               # Test suite
-│   ├── test_cantilever.py
-│   ├── test_simply_supported.py
-│   ├── test_simply_supported_udl.py
-│   ├── test_portal_frame.py
-│   ├── test_portal_frame_equilibrium.py
-│   ├── test_postprocessing.py
-│   ├── test_invariants.py
-│   ├── test_explore.py
-│   ├── test_search_pipeline_smoke.py
-│   └── test_ml_smoke.py      # ML pipeline tests (Day 4)
-├── demos/               # Example scripts
-│   ├── run_single_case.py
-│   ├── run_simply_supported.py
-│   ├── run_udl_beam.py
-│   ├── run_udl_validation.py
-│   ├── run_portal_frame.py
-│   ├── run_postprocessing.py
-│   ├── run_portal_search.py  # Design space exploration (Day 3)
-│   ├── _ml_utils.py          # ML helper functions (Day 4)
-│   ├── train_surrogate.py    # Train ML model (Day 4)
-│   └── guided_search.py      # ML-guided search (Day 4)
-├── artifacts/            # Generated results
-│   ├── results.csv           # Design evaluation results
-│   ├── pareto.png            # Pareto frontier plot
-│   ├── top10.md              # Top 10 designs summary
-│   ├── model.joblib          # Trained surrogate model (Day 4)
-│   ├── guided_vs_random.png  # ML vs random comparison (Day 4)
-│   └── feature_importance.png # Feature importances (Day 4)
-└── pyproject.toml       # Package configuration
+├── api/                      # FastAPI backend
+│   ├── main.py              # REST endpoints
+│   └── requirements.txt     # Backend dependencies
+│
+├── web/                      # Next.js frontend
+│   ├── src/
+│   │   ├── app/             # Next.js app router
+│   │   ├── components/      # React components
+│   │   │   ├── Canvas3D.tsx     # Three.js 3D viewer
+│   │   │   ├── ControlPanel.tsx # Parameter controls
+│   │   │   ├── MetricsCard.tsx  # Engineering metrics display
+│   │   │   └── ExplorePanel.tsx # Batch exploration UI
+│   │   ├── lib/             # API client and types
+│   │   └── store/           # Zustand state management
+│   └── package.json
+│
+├── mini_branch/              # FEM engine
+│   ├── kernel/              # Core solver infrastructure
+│   │   ├── dof.py           # DOF management
+│   │   ├── assemble.py      # Matrix assembly
+│   │   ├── solve.py         # Linear solver
+│   │   └── buckling.py      # Eigenvalue buckling analysis
+│   ├── checks/              # Design code checks
+│   │   └── timber.py        # Timber capacity checks (NDS/CSA O86)
+│   ├── v3d/                 # 3D truss elements
+│   │   ├── model.py         # Node3D, Truss3D
+│   │   └── elements.py      # 3D truss stiffness
+│   ├── generative/          # Parametric geometry
+│   │   └── canopy.py        # Canopy generator
+│   ├── model.py             # 2D frame models
+│   ├── elements.py          # 2D frame stiffness
+│   ├── assembly.py          # 2D assembly
+│   ├── loads.py             # Load vectors
+│   ├── solve.py             # 2D solver
+│   ├── post.py              # Post-processing
+│   ├── catalog.py           # Materials and sections
+│   ├── explore.py           # 2D design exploration
+│   ├── pareto.py            # Pareto analysis
+│   └── viz.py               # Matplotlib visualization
+│
+├── tests/                    # Test suite (51 tests)
+├── demos/                    # Example scripts
+├── artifacts/                # Generated outputs
+└── pyproject.toml           # Package configuration
+```
+
+## Engineering Features
+
+### Buckling Analysis
+
+The engine performs eigenvalue buckling analysis to determine critical load factors:
+
+```python
+from mini_branch.kernel.buckling import critical_buckling_factor, build_global_Kg
+
+# After linear solve, compute geometric stiffness
+Kg = build_global_Kg(nodes, bars, forces, dof_manager, element_geometry_3d)
+
+# Solve eigenvalue problem
+lambda_cr = critical_buckling_factor(K, Kg, fixed_dofs)
+
+# lambda_cr > 1.0 means structure is stable under current loads
+```
+
+### Timber Code Checks
+
+Implements timber design checks per CSA O86 / NDS:
+
+```python
+from mini_branch.checks.timber import DOUGLAS_FIR_CAPACITY, axial_utilization
+
+# Check member utilization
+util = axial_utilization(axial_force, area, DOUGLAS_FIR_CAPACITY)
+# util < 1.0 = PASS, util >= 1.0 = FAIL
+```
+
+### 3D Truss Analysis
+
+Full 3D truss analysis with direction cosine transformations:
+
+```python
+from mini_branch.v3d.elements import truss3d_global_stiffness, truss3d_axial_force
+
+# 6x6 element stiffness from direction cosines
+ke = truss3d_global_stiffness(nodes, element)
+
+# Extract axial force after solve
+N = truss3d_axial_force(nodes, element, d_global)
+```
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/generate` | POST | Generate and analyze a canopy design |
+| `/api/explore` | POST | Batch exploration of design variants |
+| `/api/export/csv` | POST | Export cut list as CSV |
+| `/api/export/json` | POST | Export model as JSON |
+
+### Response Fields
+
+The `/api/generate` endpoint returns:
+
+```typescript
+{
+  success: boolean
+  nodes: NodeData[]
+  bars: BarData[]      // includes force, utilization, status
+  metrics: {
+    max_displacement_mm: number
+    max_tension_kn: number
+    max_compression_kn: number
+    volume: number
+    n_length_bins: number
+    // Engineering checks
+    buckling_factor: number      // > 1.0 = stable
+    max_utilization: number      // < 1.0 = all members pass
+    n_failing_members: number    // count of overstressed members
+  }
+}
 ```
 
 ## Validation Status
 
-### ✅ Day 1 Deliverables (Completed)
+### ✅ 2D Frame Analysis
+- Cantilever beam: `δ = PL³/(3EI)` ✓
+- Simply supported: `δ = PL³/(48EI)` ✓
+- UDL beam: `δ = 5wL⁴/(384EI)` ✓
+- Portal frames with combined loading ✓
 
-**Validated Beam Cases:**
-1. **Cantilever Beam** - Tip point load
-   - ✅ Deflection matches: `δ = PL³/(3EI)`
-   - ✅ Rotation matches: `θ = PL²/(2EI)`
-   - ✅ Reactions verified
+### ✅ 3D Truss Analysis
+- Tetrahedron equilibrium ✓
+- Space truss symmetry ✓
+- Canopy structures with various topologies ✓
 
-2. **Simply Supported Beam** - Midspan point load
-   - ✅ Reactions match: `R = P/2` at each support
-   - ✅ Deflection matches: `δ = PL³/(48EI)`
+### ✅ Engineering Checks
+- Buckling factor calculation ✓
+- Timber utilization (tension/compression) ✓
+- Combined interaction checks ✓
 
-**Engineering Invariants:**
-- ✅ Stiffness matrix symmetry: `K = K^T`
-- ✅ Force equilibrium: `ΣF_y = 0`
-- ✅ Moment equilibrium: `ΣM = 0`
-
-### ✅ Day 2 Deliverables (Completed)
-
-**Uniformly Distributed Loads (UDL):**
-- ✅ Simply supported beam with UDL validated against: `δ_max = 5wL⁴/(384EI)`
-- ✅ Reactions match: `R = wL/2` at each support
-- ✅ Moment distribution matches analytical solutions
-
-**Portal Frames:**
-- ✅ Stability checks (no mechanism errors)
-- ✅ Equilibrium validation (forces and moments balance)
-- ✅ Combined loading (gravity + lateral loads)
-- ✅ Drift calculations for building code compliance
-
-**Post-processing:**
-- ✅ Reaction extraction at supports
-- ✅ Internal force and moment diagrams
-- ✅ Engineering metrics (drift, maximum moments, etc.)
-
-### ✅ Day 3 Deliverables (Completed)
-
-**Design Space Exploration:**
-- ✅ Parametric portal frame generator (`make_portal`)
-- ✅ Material and section catalog (12 timber sections)
-- ✅ Variant sampling with fabrication constraints
-- ✅ Batch evaluation pipeline (hundreds of designs)
-- ✅ Metrics extraction (drift, moments, volume, carbon)
-
-**Pareto Frontier Analysis:**
-- ✅ Non-dominated sorting algorithm
-- ✅ Pareto-optimal design identification
-- ✅ Trade-off visualization (volume vs. drift)
-
-**Visualization:**
-- ✅ Pareto frontier plots
-- ✅ Deformed shape visualization
-- ✅ Design summaries (top 10 markdown report)
-
-**Results Export:**
-- ✅ CSV export for all design results
-- ✅ Ready for Day 4 ML training
-
-### ✅ Day 4 Deliverables (Completed)
-
-**ML Surrogate Model:**
-- ✅ Data cleaning and feature engineering (`_ml_utils.py`)
-- ✅ RandomForest regressor for drift prediction
-- ✅ Train/test split with metrics (MAE, R²)
-- ✅ Model persistence (`model.joblib`)
-
-**Guided Search:**
-- ✅ Candidate pool generation (5000 designs)
-- ✅ Surrogate scoring (instant predictions)
-- ✅ Top-K selection and physics verification
-- ✅ Random baseline comparison
-
-**Visualization & Artifacts:**
-- ✅ Predicted vs actual scatter plot
-- ✅ Feature importance bar chart
-- ✅ Guided vs random comparison plot
-
-**Documentation:**
-- ✅ Engineering notes (`ENGINEERING_NOTES.md`)
-- ✅ ML smoke tests (`test_ml_smoke.py`)
-
-All tests pass and match closed-form analytical solutions within numerical tolerance.
-
-## How It Works
-
-### The Core Equation
-
-The fundamental equation of structural analysis:
-
-```
-F = K × d
-```
-
-Where:
-- **F** = Applied forces vector
-- **K** = Global stiffness matrix (how stiff the structure is)
-- **d** = Displacements vector (how much it moves) ← **What we solve for**
-
-### The Process
-
-1. **Model**: Define nodes (points) and elements (beam segments)
-2. **Assemble**: Build the global stiffness matrix from element contributions
-3. **Constrain**: Apply boundary conditions (supports)
-4. **Solve**: Compute displacements: `d = K⁻¹ × F`
-5. **Post-process**: Extract reactions, internal forces, etc.
-
-### Example: Cantilever Beam
-
-```python
-from mini_branch.model import Node, Frame2D
-from mini_branch.assembly import assemble_global_K, DOF_PER_NODE
-from mini_branch.solve import solve_linear
-
-# Define structure
-nodes = {
-    0: Node(0, 0.0, 0.0),  # Fixed end
-    1: Node(1, 3.0, 0.0),  # Free end
-}
-elements = [Frame2D(0, 0, 1, E=210e9, A=0.01, I=8e-6)]
-
-# Build stiffness matrix
-K = assemble_global_K(nodes, elements)
-
-# Apply load (1000 N downward at tip)
-F = np.zeros(DOF_PER_NODE * len(nodes))
-F[DOF_PER_NODE*1 + 1] = -1000.0
-
-# Fix left end (cantilever)
-fixed = [0, 1, 2]  # ux, uy, rz at node 0
-
-# Solve!
-d, R, _ = solve_linear(K, F, fixed)
-
-# Results
-tip_deflection = d[DOF_PER_NODE*1 + 1]  # -0.00536 m (downward)
-reaction = R[1]  # 1000 N (upward)
-```
+### ✅ Full Stack Integration
+- Next.js ↔ FastAPI communication ✓
+- Real-time 3D visualization ✓
+- Engineering metrics display ✓
+- Utilization-based coloring ✓
 
 ## Dependencies
 
-- **numpy**: Matrix operations and linear algebra
-- **matplotlib**: Visualization and plotting
-- **pandas**: Data analysis and CSV export
-- **scikit-learn**: Machine learning (RandomForest surrogate model)
-- **joblib**: Model persistence
-- **pytest**: Testing framework (dev dependency)
+### Python
+- **numpy**: Matrix operations
+- **scipy**: Eigenvalue solver for buckling
+- **pandas**: Data analysis
+- **scikit-learn**: ML surrogate model
+- **fastapi**: REST API
+- **uvicorn**: ASGI server
+- **pydantic**: Data validation
+
+### Node.js
+- **next**: React framework
+- **three**: 3D graphics
+- **@react-three/fiber**: React Three.js bindings
+- **@react-three/drei**: Three.js helpers
+- **zustand**: State management
+- **tailwindcss**: Styling
 
 ## What's Next?
 
-Future enhancements planned:
-
-- [x] Uniformly distributed loads (UDL) ✅
-- [x] Portal frames ✅
-- [x] Post-processing and visualization improvements ✅
-- [x] Design space exploration and Pareto analysis ✅
-- [x] ML-guided design optimization ✅
-- [ ] Multi-story structures
-- [ ] Dynamic analysis (modal, time-history)
-- [ ] Nonlinear analysis (material/geometric nonlinearity)
-- [ ] Code compliance (AISC/NDS)
-- [ ] Export to CAD formats
-
-## Learning Resources
-
-This project implements concepts from:
-- **Finite Element Method (FEM)**: Matrix structural analysis
-- **Structural Mechanics**: Beam theory, Euler-Bernoulli beams
-- **Linear Algebra**: Matrix operations, solving systems of equations
-- **Multi-Objective Optimization**: Pareto optimality and trade-off analysis
-- **Design Space Exploration**: Parametric design and batch evaluation
-- **Machine Learning**: Surrogate modeling for engineering optimization
+- [x] 2D frame analysis ✅
+- [x] 3D truss analysis ✅
+- [x] Buckling analysis ✅
+- [x] Timber code checks ✅
+- [x] Web application ✅
+- [x] Design exploration ✅
+- [x] ML surrogate model ✅
+- [ ] P-Delta (second-order) analysis
+- [ ] Modal/dynamic analysis
+- [ ] Steel code checks (AISC)
+- [ ] Connection modeling
+- [ ] Export to IFC/CAD formats
 
 ## License
 
 Educational project - use freely for learning!
 
-## Contributing
-
-This is a learning project. Feel free to explore, modify, and experiment!
-
 ---
 
-**Status**: ✅ Day 4 Complete - ML-guided design exploration with surrogate model
-
-See `engineering_notes.md` for technical documentation and `planning_and_docs/` for daily implementation notes.
-
+**Status**: ✅ Engineering Depth Upgrade Complete - Buckling analysis, timber checks, full-stack integration

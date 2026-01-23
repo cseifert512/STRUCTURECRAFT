@@ -121,6 +121,147 @@ export function MetricsCard() {
         </div>
       </section>
       
+      {/* Engineering Checks */}
+      <section className="mb-4 pt-3 border-t border-slate-100">
+        <h3 className="label">Engineering Checks</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <Metric
+            label="Buckling Factor"
+            value={metrics.buckling_factor !== null && metrics.buckling_factor !== undefined 
+              ? metrics.buckling_factor >= 99 ? '>99' : metrics.buckling_factor.toFixed(2)
+              : '—'}
+            warning={metrics.buckling_factor !== null && metrics.buckling_factor !== undefined && metrics.buckling_factor < 1.5}
+            tooltip="Critical buckling load factor (λ_cr). Values >1.0 indicate stability. Target >1.5 for safety margin."
+          />
+          <Metric
+            label="Max Utilization"
+            value={metrics.max_utilization !== null && metrics.max_utilization !== undefined 
+              ? (metrics.max_utilization * 100).toFixed(0) + '%'
+              : '—'}
+            warning={metrics.max_utilization !== null && metrics.max_utilization !== undefined && metrics.max_utilization >= 1.0}
+            tooltip={metrics.material_type === 'steel' 
+              ? "AISC combined utilization (H1). Values <100% pass design checks."
+              : "Timber axial utilization per NDS. Values <100% pass design checks."
+            }
+          />
+          <Metric
+            label="Failing Members"
+            value={metrics.n_failing_members !== null && metrics.n_failing_members !== undefined 
+              ? metrics.n_failing_members
+              : '—'}
+            warning={metrics.n_failing_members !== null && metrics.n_failing_members !== undefined && metrics.n_failing_members > 0}
+            tooltip="Count of members exceeding allowable stress. Increase section area or reduce loads to pass."
+          />
+        </div>
+        
+        {/* P-Delta Results */}
+        {metrics.pdelta_amplification !== null && metrics.pdelta_amplification !== undefined && (
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <Metric
+              label="P-Δ Amplification"
+              value={metrics.pdelta_amplification.toFixed(3)}
+              unit="×"
+              warning={metrics.pdelta_amplification > 1.5}
+              tooltip="Displacement amplification from P-Delta analysis. Values >1.5 indicate significant second-order effects."
+            />
+            <Metric
+              label="P-Δ Iterations"
+              value={metrics.pdelta_iterations !== null && metrics.pdelta_iterations !== undefined 
+                ? metrics.pdelta_iterations
+                : '—'}
+              tooltip="Number of iterations to converge. 0 means no compression (linear analysis sufficient)."
+            />
+          </div>
+        )}
+        
+        {/* Material and Connection badges */}
+        {(metrics.material_type || metrics.connection_type) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {metrics.material_type && (
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                metrics.material_type === 'steel'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}>
+                {metrics.material_type === 'steel' ? 'AISC Steel' : 'NDS Timber'}
+              </span>
+            )}
+            {metrics.steel_section_name && (
+              <span className="text-xs text-slate-500">{metrics.steel_section_name}</span>
+            )}
+            {metrics.connection_type && (
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                metrics.connection_type === 'rigid'
+                  ? 'bg-purple-100 text-purple-700'
+                  : metrics.connection_type === 'semi_rigid'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-slate-100 text-slate-600'
+              }`}>
+                {metrics.connection_type === 'rigid' ? 'Rigid Joints' 
+                  : metrics.connection_type === 'semi_rigid' ? 'Semi-Rigid' 
+                  : 'Pinned'}
+              </span>
+            )}
+          </div>
+        )}
+        
+        {/* Status indicator */}
+        {metrics.max_utilization !== null && metrics.max_utilization !== undefined && (
+          <div className={`mt-2 px-2 py-1.5 rounded text-xs ${
+            metrics.max_utilization < 0.8 
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : metrics.max_utilization < 1.0 
+                ? 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {metrics.max_utilization < 0.8 
+              ? '✓ All members within design limits'
+              : metrics.max_utilization < 1.0
+                ? '⚠ Some members near capacity'
+                : `✗ ${metrics.n_failing_members} member(s) overstressed`
+            }
+          </div>
+        )}
+        
+        {/* P-Delta warning */}
+        {metrics.pdelta_amplification !== null && metrics.pdelta_amplification !== undefined && metrics.pdelta_amplification > 1.5 && (
+          <div className="mt-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+            ⚠ High P-Delta amplification ({metrics.pdelta_amplification.toFixed(2)}×) — consider stiffer sections
+          </div>
+        )}
+        
+        {/* Natural Frequencies */}
+        {metrics.natural_frequencies_hz && metrics.natural_frequencies_hz.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+              Natural Frequencies
+              <span className="text-slate-400">(Hz)</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {metrics.natural_frequencies_hz.slice(0, 5).map((freq, idx) => (
+                <div 
+                  key={idx}
+                  className={`px-2 py-1 rounded text-xs font-mono ${
+                    idx === 0 
+                      ? 'bg-violet-100 text-violet-700 border border-violet-200' 
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                  title={`Mode ${idx + 1}: ${freq.toFixed(3)} Hz`}
+                >
+                  <span className="text-slate-400 mr-1">f{idx + 1}:</span>
+                  {freq.toFixed(2)}
+                </div>
+              ))}
+            </div>
+            {metrics.natural_frequencies_hz[0] < 1.0 && (
+              <div className="mt-2 px-2 py-1.5 bg-violet-50 border border-violet-200 rounded text-xs text-violet-700">
+                ⚠ Low fundamental frequency ({metrics.natural_frequencies_hz[0].toFixed(2)} Hz) — may need dynamic analysis
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+      
       {/* Fabrication */}
       <section className="pt-3 border-t border-slate-100">
         <h3 className="label">Fabrication</h3>

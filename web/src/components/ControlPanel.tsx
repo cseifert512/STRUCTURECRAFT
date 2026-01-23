@@ -8,6 +8,9 @@ import {
   HEIGHTFIELD_OPTIONS,
   TOPOLOGY_OPTIONS,
   SUPPORT_OPTIONS,
+  MATERIAL_OPTIONS,
+  STEEL_SECTION_OPTIONS,
+  CONNECTION_OPTIONS,
 } from '@/lib/types'
 import { RotateCcw } from 'lucide-react'
 
@@ -129,22 +132,51 @@ export function ControlPanel() {
               options={availableSupports}
               onChange={(v) => setParam('support_layout', v as typeof params.support_layout)}
             />
+            <Select
+              label="Connections"
+              value={params.connection_type}
+              options={CONNECTION_OPTIONS}
+              onChange={(v) => setParam('connection_type', v as typeof params.connection_type)}
+            />
           </div>
         </section>
         
         {/* Material Section */}
         <section>
+          <h3 className="label">Material</h3>
+          <div className="space-y-3">
+            <Select
+              label="Type"
+              value={params.material_type}
+              options={MATERIAL_OPTIONS}
+              onChange={(v) => setParam('material_type', v as typeof params.material_type)}
+            />
+            {params.material_type === 'steel' && (
+              <Select
+                label="Section"
+                value={params.steel_section}
+                options={STEEL_SECTION_OPTIONS}
+                onChange={(v) => setParam('steel_section', v)}
+              />
+            )}
+            {params.material_type === 'timber' && (
+              <Slider
+                label="Section Area"
+                value={params.A_cm2}
+                min={PARAM_LIMITS.A_cm2.min}
+                max={PARAM_LIMITS.A_cm2.max}
+                step={PARAM_LIMITS.A_cm2.step}
+                unit=" cm²"
+                onChange={(v) => setParam('A_cm2', v)}
+              />
+            )}
+          </div>
+        </section>
+        
+        {/* Loading Section */}
+        <section>
           <h3 className="label">Loading</h3>
           <div className="space-y-3">
-            <Slider
-              label="Section Area"
-              value={params.A_cm2}
-              min={PARAM_LIMITS.A_cm2.min}
-              max={PARAM_LIMITS.A_cm2.max}
-              step={PARAM_LIMITS.A_cm2.step}
-              unit=" cm²"
-              onChange={(v) => setParam('A_cm2', v)}
-            />
             <Slider
               label="Gravity Load"
               value={params.gravity_kn}
@@ -155,6 +187,61 @@ export function ControlPanel() {
               onChange={(v) => setParam('gravity_kn', v)}
             />
           </div>
+        </section>
+        
+        {/* Advanced Analysis */}
+        <section>
+          <h3 className="label">Analysis</h3>
+          <div className="space-y-2">
+            <button
+              onClick={() => setParam('pdelta_enabled', !params.pdelta_enabled)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded border transition-colors ${
+                params.pdelta_enabled 
+                  ? 'bg-amber-600 border-amber-600 text-white' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="text-sm font-medium">P-Delta</span>
+              </div>
+              <span className={`text-xs font-mono ${params.pdelta_enabled ? 'text-amber-200' : 'text-slate-400'}`}>
+                {params.pdelta_enabled ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            
+            <button
+              onClick={() => setParam('modal_enabled', !params.modal_enabled)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded border transition-colors ${
+                params.modal_enabled 
+                  ? 'bg-violet-600 border-violet-600 text-white' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+                <span className="text-sm font-medium">Modal</span>
+              </div>
+              <span className={`text-xs font-mono ${params.modal_enabled ? 'text-violet-200' : 'text-slate-400'}`}>
+                {params.modal_enabled ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          </div>
+          
+          {params.pdelta_enabled && (
+            <div className="mt-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+              P-Δ: Second-order effects included
+            </div>
+          )}
+          {params.modal_enabled && (
+            <div className="mt-2 px-2 py-1.5 bg-violet-50 border border-violet-200 rounded text-xs text-violet-700">
+              Modal: Natural frequencies computed
+            </div>
+          )}
         </section>
         
         {/* Display Options */}

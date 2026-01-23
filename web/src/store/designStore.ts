@@ -246,13 +246,13 @@ export const useDesignStore = create<DesignState>((set, get) => ({
   },
   
   applySelectedDesign: () => {
-    const { exploreResults, selectedDesignIndex } = get()
+    const { exploreResults, selectedDesignIndex, params } = get()
     if (selectedDesignIndex === null) return
     
     const design = exploreResults.find(d => d.index === selectedDesignIndex)
     if (!design) return
     
-    // Apply design parameters
+    // Apply design parameters (keep material, connection, and analysis settings from current params)
     set({
       params: {
         width: design.width,
@@ -266,6 +266,11 @@ export const useDesignStore = create<DesignState>((set, get) => ({
         support_layout: design.support_layout as DesignParams['support_layout'],
         A_cm2: design.A_cm2,
         gravity_kn: design.gravity_kn,
+        material_type: params.material_type,
+        steel_section: params.steel_section,
+        connection_type: params.connection_type,
+        pdelta_enabled: params.pdelta_enabled,
+        modal_enabled: params.modal_enabled,
       },
       selectedDesignIndex: null,
     })

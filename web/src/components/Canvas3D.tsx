@@ -15,16 +15,26 @@ const COLORS = {
   support: new THREE.Color('#212529'),      // Dark for supports
   node: new THREE.Color('#495057'),         // Dark gray for nodes
   ground: new THREE.Color('#F8F9FA'),       // Light gray ground
+  // Utilization colors
+  utilSafe: new THREE.Color('#2D6A4F'),     // Green for safe (<70%)
+  utilWarning: new THREE.Color('#E9C46A'),  // Yellow for warning (70-100%)
+  utilFail: new THREE.Color('#D62828'),     // Red for failing (>100%)
 }
+
+// Color mode options
+type ColorMode = 'none' | 'force' | 'utilization'
 
 interface StructureProps {
   nodes: NodeData[]
   bars: BarData[]
   supportNodes: number[]
-  colorByForce: boolean
+  colorByForce: boolean  // Legacy prop, maps to colorMode
 }
 
 function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) {
+  // Determine color mode: force coloring or utilization coloring
+  // For now, colorByForce toggles between force and utilization
+  const colorMode: ColorMode = colorByForce ? 'utilization' : 'none'
   // Create node lookup map
   const nodeMap = useMemo(() => {
     const map = new Map<number, NodeData>()
@@ -55,10 +65,30 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
     }
   }, [nodes])
   
-  // Get color for a bar based on force
-  const getBarColor = (force: number) => {
-    if (!colorByForce) return COLORS.neutral
+  // Get color for a bar based on color mode
+  const getBarColor = (bar: BarData) => {
+    if (colorMode === 'none') return COLORS.neutral
     
+    if (colorMode === 'utilization') {
+      // Color by stress utilization ratio
+      const util = bar.utilization ?? 0
+      if (util >= 1.0) {
+        // Failing - red, intensity based on how much over
+        const overUtil = Math.min((util - 1.0) * 2, 1)
+        return COLORS.utilFail.clone().lerp(new THREE.Color('#8B0000'), overUtil)
+      } else if (util >= 0.7) {
+        // Warning - yellow to orange gradient
+        const warningIntensity = (util - 0.7) / 0.3
+        return COLORS.utilSafe.clone().lerp(COLORS.utilWarning, warningIntensity)
+      } else {
+        // Safe - green, brighter for lower utilization
+        const safeIntensity = util / 0.7
+        return COLORS.utilSafe.clone().lerp(COLORS.neutral, 1 - safeIntensity * 0.5)
+      }
+    }
+    
+    // Force-based coloring (fallback)
+    const force = bar.force
     if (force > 0) {
       // Tension (positive) - red, scale by max tension
       const intensity = Math.min(force / forceRange.maxTension, 1)
@@ -84,7 +114,9 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
         const endNode = nodeMap.get(bar.nj)
         if (!startNode || !endNode) return null
         
-        const color = getBarColor(bar.force)
+        const color = getBarColor(bar)
+        // Thicker lines for failing members
+        const lineWidth = (bar.utilization ?? 0) >= 1.0 ? 2.5 : 1.5
         
         return (
           <Line
@@ -94,7 +126,7 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
               toThreeCoords(endNode.x, endNode.y, endNode.z),
             ]}
             color={color}
-            lineWidth={1.5}
+            lineWidth={lineWidth}
           />
         )
       })}

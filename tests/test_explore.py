@@ -408,7 +408,7 @@ def test_make_portal_validation():
         make_portal(params, DEFAULT_MATERIAL, TIMBER_SECTIONS)
     
     # Test invalid section index
-    with pytest.raises(ValueError, match="sec_col index.*out of range"):
+    with pytest.raises(ValueError, match="sec_col.*out of range"):
         params = PortalParams(
             span=6.0,
             height=3.0,
