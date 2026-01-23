@@ -1,6 +1,8 @@
 numpy
 matplotlib
 pandas
+scikit-learn
+joblib
 
 [dev]
 pytest

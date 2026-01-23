@@ -4,5 +4,7 @@ Version: 0.0.1
 Requires-Dist: numpy
 Requires-Dist: matplotlib
 Requires-Dist: pandas
+Requires-Dist: scikit-learn
+Requires-Dist: joblib
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"

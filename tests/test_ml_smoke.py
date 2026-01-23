@@ -248,3 +248,4 @@ class TestEndToEnd:
         model_error = np.mean(np.abs(y - y_pred))
         assert model_error < mean_baseline_error, "Model should beat mean baseline"
 
+
