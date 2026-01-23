@@ -1,8 +1,18 @@
 // Zustand store for design state
 
 import { create } from 'zustand'
-import { DesignParams, DesignResult, NodeData, BarData, MetricsData, DEFAULT_PARAMS } from '@/lib/types'
-import { generateDesign } from '@/lib/api'
+import { 
+  DesignParams, 
+  DesignResult, 
+  NodeData, 
+  BarData, 
+  MetricsData, 
+  DEFAULT_PARAMS,
+  ExploreDesignData,
+  ExploreResult,
+  DEFAULT_EXPLORE_SETTINGS,
+} from '@/lib/types'
+import { generateDesign, exploreDesigns } from '@/lib/api'
 
 interface DesignState {
   // Parameters
@@ -19,12 +29,44 @@ interface DesignState {
   // Color mode for 3D view
   colorByForce: boolean
   
+  // Exploration state
+  exploreSettings: {
+    n_designs: number
+    seed: number
+    variation_pct: number
+  }
+  isExploring: boolean
+  exploreError: string | null
+  exploreResults: ExploreDesignData[]
+  nTotal: number
+  nSuccessful: number
+  nPareto: number
+  selectedDesignIndex: number | null
+  showExplorePanel: boolean
+  
+  // Filter state
+  filters: {
+    maxDisplacement: number | null
+    maxMemberLength: number | null
+    topology: string | null
+    paretoOnly: boolean
+  }
+  
   // Actions
   setParam: <K extends keyof DesignParams>(key: K, value: DesignParams[K]) => void
   setParams: (params: Partial<DesignParams>) => void
   generate: () => Promise<void>
   setColorByForce: (value: boolean) => void
   reset: () => void
+  
+  // Exploration actions
+  setExploreSettings: (settings: Partial<typeof DEFAULT_EXPLORE_SETTINGS>) => void
+  runExploration: () => Promise<void>
+  clearExploration: () => void
+  selectDesign: (index: number | null) => void
+  applySelectedDesign: () => void
+  setShowExplorePanel: (show: boolean) => void
+  setFilters: (filters: Partial<DesignState['filters']>) => void
 }
 
 // Debounce helper
@@ -40,6 +82,23 @@ export const useDesignStore = create<DesignState>((set, get) => ({
   supportNodes: [],
   metrics: null,
   colorByForce: false,
+  
+  // Exploration initial state
+  exploreSettings: { ...DEFAULT_EXPLORE_SETTINGS },
+  isExploring: false,
+  exploreError: null,
+  exploreResults: [],
+  nTotal: 0,
+  nSuccessful: 0,
+  nPareto: 0,
+  selectedDesignIndex: null,
+  showExplorePanel: false,
+  filters: {
+    maxDisplacement: null,
+    maxMemberLength: null,
+    topology: null,
+    paretoOnly: false,
+  },
   
   // Set a single parameter
   setParam: (key, value) => {
@@ -120,6 +179,109 @@ export const useDesignStore = create<DesignState>((set, get) => ({
       error: null,
     })
     get().generate()
+  },
+  
+  // Exploration actions
+  setExploreSettings: (settings) => {
+    set((state) => ({
+      exploreSettings: { ...state.exploreSettings, ...settings },
+    }))
+  },
+  
+  runExploration: async () => {
+    const { params, exploreSettings } = get()
+    set({ 
+      isExploring: true, 
+      exploreError: null,
+      showExplorePanel: true,
+    })
+    
+    try {
+      const result = await exploreDesigns({
+        base_params: params,
+        n_designs: exploreSettings.n_designs,
+        seed: exploreSettings.seed,
+        variation_pct: exploreSettings.variation_pct,
+      })
+      
+      if (result.success) {
+        set({
+          isExploring: false,
+          exploreResults: result.designs,
+          nTotal: result.n_total,
+          nSuccessful: result.n_successful,
+          nPareto: result.n_pareto,
+          selectedDesignIndex: null,
+        })
+      } else {
+        set({
+          isExploring: false,
+          exploreError: result.error || 'Exploration failed',
+          exploreResults: [],
+        })
+      }
+    } catch (err) {
+      set({
+        isExploring: false,
+        exploreError: err instanceof Error ? err.message : 'Exploration failed',
+        exploreResults: [],
+      })
+    }
+  },
+  
+  clearExploration: () => {
+    set({
+      exploreResults: [],
+      nTotal: 0,
+      nSuccessful: 0,
+      nPareto: 0,
+      selectedDesignIndex: null,
+      exploreError: null,
+      showExplorePanel: false,
+    })
+  },
+  
+  selectDesign: (index) => {
+    set({ selectedDesignIndex: index })
+  },
+  
+  applySelectedDesign: () => {
+    const { exploreResults, selectedDesignIndex } = get()
+    if (selectedDesignIndex === null) return
+    
+    const design = exploreResults.find(d => d.index === selectedDesignIndex)
+    if (!design) return
+    
+    // Apply design parameters
+    set({
+      params: {
+        width: design.width,
+        depth: design.depth,
+        nx: design.nx,
+        ny: design.ny,
+        min_height: design.min_height,
+        max_height: design.max_height,
+        heightfield: design.heightfield as DesignParams['heightfield'],
+        topology: design.topology as DesignParams['topology'],
+        support_layout: design.support_layout as DesignParams['support_layout'],
+        A_cm2: design.A_cm2,
+        gravity_kn: design.gravity_kn,
+      },
+      selectedDesignIndex: null,
+    })
+    
+    // Regenerate with new params
+    get().generate()
+  },
+  
+  setShowExplorePanel: (show) => {
+    set({ showExplorePanel: show })
+  },
+  
+  setFilters: (filters) => {
+    set((state) => ({
+      filters: { ...state.filters, ...filters },
+    }))
   },
 }))
 

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import sys
 from pathlib import Path
 import io
@@ -24,6 +24,7 @@ from mini_branch.kernel.dof import DOFManager
 from mini_branch.kernel.assemble import assemble_global_K
 from mini_branch.kernel.solve import solve_linear, MechanismError
 import numpy as np
+import pandas as pd
 
 
 app = FastAPI(
@@ -106,6 +107,59 @@ class DesignResult(BaseModel):
     support_nodes: Optional[List[int]] = None
     metrics: Optional[MetricsData] = None
     params: Optional[Dict[str, Any]] = None
+
+
+# =============================================================================
+# Exploration Models
+# =============================================================================
+
+class ExploreParams(BaseModel):
+    """Parameters for batch exploration."""
+    base_params: DesignParams = Field(..., description="Base design to vary around")
+    n_designs: int = Field(100, ge=10, le=500, description="Number of variants")
+    seed: int = Field(42, ge=1, description="Random seed")
+    variation_pct: float = Field(0.3, ge=0.1, le=0.5, description="Variation percentage")
+
+
+class ExploreDesignData(BaseModel):
+    """Single design in exploration results."""
+    index: int
+    ok: bool
+    reason: Optional[str] = None
+    # Parameters
+    width: float
+    depth: float
+    nx: int
+    ny: int
+    min_height: float
+    max_height: float
+    heightfield: str
+    topology: str
+    support_layout: str
+    A_cm2: float
+    gravity_kn: float
+    # Metrics (optional if failed)
+    volume: Optional[float] = None
+    max_displacement: Optional[float] = None
+    max_displacement_mm: Optional[float] = None
+    n_length_bins: Optional[int] = None
+    max_member_length_mm: Optional[float] = None
+    max_tension_kn: Optional[float] = None
+    max_compression_kn: Optional[float] = None
+    n_nodes: Optional[int] = None
+    n_bars: Optional[int] = None
+    # Pareto flag
+    is_pareto: bool = False
+
+
+class ExploreResult(BaseModel):
+    """Batch exploration result."""
+    success: bool
+    error: Optional[str] = None
+    n_total: int = 0
+    n_successful: int = 0
+    n_pareto: int = 0
+    designs: List[ExploreDesignData] = []
 
 
 # =============================================================================
@@ -398,6 +452,225 @@ async def export_json(params: DesignParams):
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=canopy_model.json"}
     )
+
+
+# =============================================================================
+# Exploration Functions
+# =============================================================================
+
+def sample_variants_around_base(
+    base_params: DesignParams,
+    n_designs: int,
+    seed: int,
+    variation_pct: float,
+) -> List[DesignParams]:
+    """Generate design variants by varying parameters around a base design."""
+    rng = np.random.default_rng(seed)
+    variants = []
+    
+    heightfields = ['flat', 'paraboloid', 'ridge', 'saddle']
+    topologies = ['grid', 'diagrid', 'triangulated']
+    support_layouts = ['edges', 'corners', 'perimeter_4']
+    
+    for _ in range(n_designs):
+        # Vary continuous parameters
+        width = rng.uniform(
+            base_params.width * (1 - variation_pct),
+            base_params.width * (1 + variation_pct)
+        )
+        width = max(4.0, min(20.0, width))
+        
+        depth = rng.uniform(
+            base_params.depth * (1 - variation_pct),
+            base_params.depth * (1 + variation_pct)
+        )
+        depth = max(4.0, min(16.0, depth))
+        
+        nx = int(rng.integers(max(2, base_params.nx - 2), min(10, base_params.nx + 2) + 1))
+        ny = int(rng.integers(max(2, base_params.ny - 2), min(10, base_params.ny + 2) + 1))
+        
+        max_height = rng.uniform(
+            base_params.max_height * (1 - variation_pct * 0.5),
+            base_params.max_height * (1 + variation_pct * 0.5)
+        )
+        max_height = max(1.5, min(6.0, max_height))
+        
+        min_height = rng.uniform(
+            base_params.min_height * (1 - variation_pct * 0.5),
+            min(max_height - 0.25, base_params.min_height * (1 + variation_pct * 0.5))
+        )
+        min_height = max(1.5, min(max_height - 0.25, min_height))
+        
+        A_cm2 = rng.uniform(
+            base_params.A_cm2 * (1 - variation_pct),
+            base_params.A_cm2 * (1 + variation_pct)
+        )
+        A_cm2 = max(3.0, min(20.0, A_cm2))
+        
+        gravity_kn = rng.uniform(
+            base_params.gravity_kn * (1 - variation_pct),
+            base_params.gravity_kn * (1 + variation_pct)
+        )
+        gravity_kn = max(20.0, min(150.0, gravity_kn))
+        
+        # Sample categorical parameters
+        heightfield = rng.choice(heightfields)
+        topology = rng.choice(topologies)
+        support_layout = rng.choice(support_layouts, p=[0.7, 0.15, 0.15])
+        
+        variants.append(DesignParams(
+            width=round(width, 2),
+            depth=round(depth, 2),
+            nx=nx,
+            ny=ny,
+            min_height=round(min_height, 2),
+            max_height=round(max_height, 2),
+            heightfield=heightfield,
+            topology=topology,
+            support_layout=support_layout,
+            A_cm2=round(A_cm2, 2),
+            gravity_kn=round(gravity_kn, 1),
+        ))
+    
+    return variants
+
+
+def evaluate_single_design(params: DesignParams, index: int) -> ExploreDesignData:
+    """Evaluate a single design for exploration."""
+    result = generate_and_solve(params)
+    
+    data = ExploreDesignData(
+        index=index,
+        ok=result.success,
+        reason=result.error,
+        width=params.width,
+        depth=params.depth,
+        nx=params.nx,
+        ny=params.ny,
+        min_height=params.min_height,
+        max_height=params.max_height,
+        heightfield=params.heightfield,
+        topology=params.topology,
+        support_layout=params.support_layout,
+        A_cm2=params.A_cm2,
+        gravity_kn=params.gravity_kn,
+    )
+    
+    if result.success and result.metrics:
+        data.volume = result.metrics.volume
+        data.max_displacement = result.metrics.max_displacement
+        data.max_displacement_mm = result.metrics.max_displacement_mm
+        data.n_length_bins = result.metrics.n_length_bins
+        data.max_member_length_mm = result.metrics.max_member_length_mm
+        data.max_tension_kn = result.metrics.max_tension_kn
+        data.max_compression_kn = result.metrics.max_compression_kn
+        data.n_nodes = result.metrics.n_nodes
+        data.n_bars = result.metrics.n_bars
+    
+    return data
+
+
+def compute_pareto_mask(designs: List[ExploreDesignData]) -> List[bool]:
+    """Compute Pareto frontier for successful designs."""
+    # Get successful designs with valid metrics
+    successful = [d for d in designs if d.ok and d.volume is not None and d.max_displacement is not None]
+    
+    if len(successful) == 0:
+        return [False] * len(designs)
+    
+    # Build objective matrix (minimize volume, displacement, length_bins)
+    n = len(successful)
+    obj_values = np.zeros((n, 3))
+    
+    for i, d in enumerate(successful):
+        obj_values[i, 0] = d.volume or 0
+        obj_values[i, 1] = d.max_displacement or 0
+        obj_values[i, 2] = d.n_length_bins or 0
+    
+    # Find Pareto frontier
+    is_pareto = np.ones(n, dtype=bool)
+    
+    for i in range(n):
+        if not is_pareto[i]:
+            continue
+        
+        for j in range(n):
+            if i == j or not is_pareto[j]:
+                continue
+            
+            # Check if j dominates i
+            better_or_equal = obj_values[j] <= obj_values[i]
+            strictly_better = obj_values[j] < obj_values[i]
+            
+            if better_or_equal.all() and strictly_better.any():
+                is_pareto[i] = False
+                break
+    
+    # Map back to full list
+    result = [False] * len(designs)
+    successful_indices = [i for i, d in enumerate(designs) if d.ok and d.volume is not None]
+    
+    for idx, pareto_val in zip(successful_indices, is_pareto):
+        result[idx] = bool(pareto_val)
+    
+    return result
+
+
+@app.post("/api/explore", response_model=ExploreResult)
+async def explore_designs(params: ExploreParams):
+    """Run batch exploration of design variants."""
+    print(f"\n{'='*60}")
+    print(f"[DEBUG] EXPLORE REQUEST")
+    print(f"[DEBUG] n_designs: {params.n_designs}")
+    print(f"[DEBUG] seed: {params.seed}")
+    print(f"[DEBUG] variation_pct: {params.variation_pct}")
+    print(f"{'='*60}")
+    
+    try:
+        # Generate variants
+        variants = sample_variants_around_base(
+            params.base_params,
+            params.n_designs,
+            params.seed,
+            params.variation_pct,
+        )
+        
+        print(f"[DEBUG] Generated {len(variants)} variants")
+        
+        # Evaluate each variant
+        designs = []
+        for i, variant in enumerate(variants):
+            if (i + 1) % 20 == 0:
+                print(f"[DEBUG] Evaluating {i + 1}/{len(variants)}...")
+            design_data = evaluate_single_design(variant, i)
+            designs.append(design_data)
+        
+        # Compute Pareto frontier
+        pareto_mask = compute_pareto_mask(designs)
+        for i, is_pareto in enumerate(pareto_mask):
+            designs[i].is_pareto = is_pareto
+        
+        n_successful = sum(1 for d in designs if d.ok)
+        n_pareto = sum(pareto_mask)
+        
+        print(f"[DEBUG] Results: {n_successful} successful, {n_pareto} Pareto-optimal")
+        
+        return ExploreResult(
+            success=True,
+            n_total=len(designs),
+            n_successful=n_successful,
+            n_pareto=n_pareto,
+            designs=designs,
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] Exploration failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return ExploreResult(
+            success=False,
+            error=str(e),
+        )
 
 
 if __name__ == "__main__":

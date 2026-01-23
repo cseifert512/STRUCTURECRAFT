@@ -6,6 +6,12 @@ from .parameter_inputs import (
     render_structure_inputs,
     render_material_inputs,
     check_stability_warning,
+    get_stable_support_options,
+)
+from .pareto_plot import (
+    render_pareto_plot,
+    create_design_summary_table,
+    get_design_details,
 )
 
 __all__ = [
@@ -15,5 +21,9 @@ __all__ = [
     'render_structure_inputs',
     'render_material_inputs',
     'check_stability_warning',
+    'get_stable_support_options',
+    'render_pareto_plot',
+    'create_design_summary_table',
+    'get_design_details',
 ]
 
