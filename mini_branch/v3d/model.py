@@ -127,3 +127,4 @@ class Truss3D:
     E: float  # Young's modulus (Pa)
     A: float  # Cross-sectional area (m²)
 
+

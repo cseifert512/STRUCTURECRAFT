@@ -313,3 +313,4 @@ def slenderness_check(section: SteelSection, L: float, K: float = 1.0) -> Tuple[
     else:
         return slenderness, 'FAIL'
 
+

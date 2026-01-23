@@ -58,3 +58,4 @@ class AppConfig:
 # Global config instance
 CONFIG = AppConfig()
 
+

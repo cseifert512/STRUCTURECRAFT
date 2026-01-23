@@ -227,3 +227,4 @@ def generate_design_pdf(
     
     return buffer.getvalue()
 
+

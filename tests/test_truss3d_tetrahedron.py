@@ -316,3 +316,4 @@ class TestTetrahedronMechanism:
         with pytest.raises(MechanismError):
             solve_linear(K, F, fixed_dofs)
 
+

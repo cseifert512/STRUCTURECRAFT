@@ -31,3 +31,4 @@ from .kernel import DOFManager, solve_linear, MechanismError
 # Version
 __version__ = "0.3.0"  # Bumped for kernel refactor
 
+

@@ -316,3 +316,4 @@ def get_design_details(df: pd.DataFrame, idx: int) -> dict:
         },
     }
 
+

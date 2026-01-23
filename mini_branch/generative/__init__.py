@@ -30,3 +30,4 @@ from .canopy import generate_canopy, CanopyParams
 
 __all__ = ['generate_canopy', 'CanopyParams']
 
+

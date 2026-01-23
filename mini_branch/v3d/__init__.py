@@ -40,3 +40,4 @@ from .elements import truss3d_global_stiffness, element_geometry_3d
 
 __all__ = ['Node3D', 'Truss3D', 'truss3d_global_stiffness', 'element_geometry_3d']
 
+
