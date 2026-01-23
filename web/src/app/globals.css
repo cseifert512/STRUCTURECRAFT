@@ -4,8 +4,8 @@
 
 @layer base {
   :root {
-    --background: 250 249 246;
-    --foreground: 44 62 45;
+    --background: 248 250 252;
+    --foreground: 15 23 42;
   }
   
   html {
@@ -13,102 +13,71 @@
   }
   
   body {
-    @apply bg-cream-100 text-forest-800 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased;
   }
   
-  /* Custom scrollbar */
+  /* Custom scrollbar - minimal */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   
   ::-webkit-scrollbar-track {
-    @apply bg-cream-200;
+    @apply bg-slate-100;
   }
   
   ::-webkit-scrollbar-thumb {
-    @apply bg-sage-300 rounded-full;
+    @apply bg-slate-300 rounded;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-sage-400;
+    @apply bg-slate-400;
   }
 }
 
 @layer components {
-  /* Glass effect panels */
-  .glass-panel {
-    @apply bg-white/70 backdrop-blur-xl border border-cream-300/50 shadow-soft;
+  /* Clean card style */
+  .card {
+    @apply bg-white border border-slate-200 shadow-subtle;
   }
   
-  /* Organic button style */
-  .btn-organic {
-    @apply px-4 py-2 rounded-xl bg-sage-500 text-white font-medium
-           transition-all duration-300 ease-out
-           hover:bg-sage-600 hover:shadow-soft
-           active:scale-[0.98]
-           focus:outline-none focus:ring-2 focus:ring-sage-400 focus:ring-offset-2 focus:ring-offset-cream-100;
+  /* Primary button */
+  .btn-primary {
+    @apply px-4 py-2 bg-slate-900 text-white text-sm font-medium
+           transition-colors duration-150
+           hover:bg-slate-800
+           focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2;
   }
   
-  .btn-organic-secondary {
-    @apply px-4 py-2 rounded-xl bg-cream-200 text-forest-700 font-medium
-           border border-cream-300
-           transition-all duration-300 ease-out
-           hover:bg-cream-300 hover:border-sage-300
-           active:scale-[0.98]
-           focus:outline-none focus:ring-2 focus:ring-sage-300 focus:ring-offset-2 focus:ring-offset-cream-100;
+  /* Secondary button */
+  .btn-secondary {
+    @apply px-4 py-2 bg-white text-slate-700 text-sm font-medium
+           border border-slate-300
+           transition-colors duration-150
+           hover:bg-slate-50 hover:border-slate-400
+           focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2;
   }
   
   /* Input styling */
-  .input-organic {
-    @apply w-full px-4 py-2.5 rounded-xl
-           bg-cream-50 border border-cream-300
-           text-forest-800 placeholder:text-stone-400
-           transition-all duration-200
-           focus:outline-none focus:border-sage-400 focus:ring-2 focus:ring-sage-200;
-  }
-  
-  /* Card styling */
-  .card-organic {
-    @apply bg-white rounded-3xl p-6 shadow-soft border border-cream-200/50;
+  .input {
+    @apply w-full px-3 py-2
+           bg-white border border-slate-300
+           text-slate-900 text-sm placeholder:text-slate-400
+           transition-colors duration-150
+           focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500;
   }
   
   /* Section label */
-  .section-label {
-    @apply text-xs font-medium uppercase tracking-wider text-stone-500 mb-3;
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2;
   }
   
-  /* Metric value styling */
+  /* Metric display */
   .metric-value {
-    @apply text-2xl font-serif font-medium text-forest-800;
+    @apply text-xl font-semibold tabular-nums text-slate-900;
   }
   
   .metric-label {
-    @apply text-sm text-stone-500;
-  }
-  
-  /* Subtle texture overlay */
-  .texture-overlay {
-    @apply pointer-events-none fixed inset-0 z-50 opacity-[0.015];
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    @apply text-xs text-slate-500;
   }
 }
-
-@layer utilities {
-  /* Text gradient utility */
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-sage-600 to-forest-700;
-  }
-  
-  /* Fade edges for 3D canvas */
-  .fade-edges {
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0%,
-      black 5%,
-      black 95%,
-      transparent 100%
-    );
-  }
-}
-

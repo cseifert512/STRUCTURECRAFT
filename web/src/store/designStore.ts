@@ -74,19 +74,20 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     try {
       const result = await generateDesign(params)
       
-      if (result.success && result.nodes && result.bars && result.metrics) {
+      // Always update geometry if we have it (even if solve failed)
+      if (result.nodes && result.bars) {
         set({
           isLoading: false,
-          error: null,
+          error: result.error || null,
           nodes: result.nodes,
           bars: result.bars,
           supportNodes: result.support_nodes || [],
-          metrics: result.metrics,
+          metrics: result.metrics || null,
         })
       } else {
         set({
           isLoading: false,
-          error: result.error || 'Unknown error',
+          error: result.error || 'Failed to generate geometry',
           nodes: [],
           bars: [],
           supportNodes: [],

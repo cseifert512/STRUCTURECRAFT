@@ -134,18 +134,13 @@ def check_stability(topology: str, support_layout: str, nx: int, ny: int) -> Opt
 # =============================================================================
 
 def generate_and_solve(params: DesignParams) -> DesignResult:
-    """Generate canopy structure and solve it."""
+    """Generate canopy structure and solve it. Returns geometry even if solve fails."""
     
-    # Check stability first
-    warning = check_stability(params.topology, params.support_layout, params.nx, params.ny)
-    if warning and 'Unstable' in warning:
-        return DesignResult(success=False, error=warning)
+    # Convert params
+    A = params.A_cm2 / 10000  # cm² to m²
+    gravity_load = -params.gravity_kn * 1000  # kN to N, negative for down
     
     try:
-        # Convert params
-        A = params.A_cm2 / 10000  # cm² to m²
-        gravity_load = -params.gravity_kn * 1000  # kN to N, negative for down
-        
         canopy_params = CanopyParams(
             width=params.width,
             depth=params.depth,
@@ -161,15 +156,46 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             gravity_load=gravity_load,
         )
         
-        # Generate structure
+        # Generate structure (geometry only)
         nodes, bars, fixed_dofs, F = generate_canopy(canopy_params)
-        
-        n_nodes = len(nodes)
-        n_bars = len(bars)
-        n_supports = len(fixed_dofs) // 3
-        
-        # Assemble
-        dof = DOFManager(dof_per_node=3)
+    except Exception as e:
+        return DesignResult(success=False, error=f"Failed to generate geometry: {str(e)}")
+    
+    n_nodes = len(nodes)
+    n_bars = len(bars)
+    n_supports = len(fixed_dofs) // 3
+    
+    # Get support node IDs
+    dof = DOFManager(dof_per_node=3)
+    support_node_ids = []
+    for i in range(n_nodes):
+        if dof.idx(i, 0) in fixed_dofs:
+            support_node_ids.append(i)
+    
+    # Build geometry response (always returned)
+    nodes_list = [
+        NodeData(id=n.id, x=round(n.x, 4), y=round(n.y, 4), z=round(n.z, 4))
+        for n in nodes.values()
+    ]
+    
+    # Compute lengths (geometry only, no solve needed)
+    lengths = []
+    total_length = 0.0
+    volume = 0.0
+    for bar in bars:
+        L, _, _, _ = element_geometry_3d(nodes, bar)
+        lengths.append((bar.id, L))
+        total_length += L
+        volume += bar.A * L
+    
+    # Try to solve
+    solve_error = None
+    forces = {}
+    max_displacement = 0.0
+    max_tension = 0.0
+    max_compression = 0.0
+    
+    try:
         ndof = dof.ndof(n_nodes)
         
         contributions = []
@@ -179,12 +205,9 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             contributions.append((dof_map, ke))
         
         K = assemble_global_K(ndof, contributions)
-        
-        # Solve
         d, R, free = solve_linear(K, F, fixed_dofs)
         
         # Extract displacements
-        max_displacement = 0.0
         for node_id in nodes:
             ux = d[dof.idx(node_id, 0)]
             uy = d[dof.idx(node_id, 1)]
@@ -192,14 +215,7 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
             total = np.sqrt(ux**2 + uy**2 + uz**2)
             max_displacement = max(max_displacement, total)
         
-        # Extract forces and compute lengths
-        forces = {}
-        max_tension = 0.0
-        max_compression = 0.0
-        lengths = []
-        total_length = 0.0
-        volume = 0.0
-        
+        # Extract forces
         for bar in bars:
             N = truss3d_axial_force(nodes, bar, d)
             forces[bar.id] = N
@@ -207,69 +223,55 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
                 max_tension = N
             if N < max_compression:
                 max_compression = N
-            
-            L, _, _, _ = element_geometry_3d(nodes, bar)
-            lengths.append((bar.id, L))
-            total_length += L
-            volume += bar.A * L
-        
-        # Length bins
-        bins = compute_length_bins(lengths, tolerance=0.010)
-        
-        # Get support node IDs
-        support_nodes = []
-        for i in range(n_nodes):
-            if dof.idx(i, 0) in fixed_dofs:
-                support_nodes.append(i)
-        
-        # Build response
-        nodes_list = [
-            NodeData(id=n.id, x=round(n.x, 4), y=round(n.y, 4), z=round(n.z, 4))
-            for n in nodes.values()
-        ]
-        
-        bars_list = []
-        for bar in bars:
-            L, _, _, _ = element_geometry_3d(nodes, bar)
-            bars_list.append(BarData(
-                id=bar.id,
-                ni=bar.ni,
-                nj=bar.nj,
-                length=round(L, 4),
-                force=round(forces[bar.id], 2)
-            ))
-        
-        metrics = MetricsData(
-            n_nodes=n_nodes,
-            n_bars=n_bars,
-            n_supports=n_supports,
-            max_displacement=round(max_displacement, 6),
-            max_displacement_mm=round(max_displacement * 1000, 2),
-            max_tension=round(max_tension, 2),
-            max_tension_kn=round(max_tension / 1000, 2),
-            max_compression=round(abs(max_compression), 2),
-            max_compression_kn=round(abs(max_compression) / 1000, 2),
-            volume=round(volume, 6),
-            total_length=round(total_length, 2),
-            n_length_bins=len(bins),
-            max_member_length=round(max(L for _, L in lengths), 4),
-            max_member_length_mm=round(max(L for _, L in lengths) * 1000, 1),
-            min_member_length=round(min(L for _, L in lengths), 4),
-        )
-        
-        return DesignResult(
-            success=True,
-            nodes=nodes_list,
-            bars=bars_list,
-            support_nodes=support_nodes,
-            metrics=metrics,
-            params=params.model_dump()
-        )
-        
+                
     except MechanismError as e:
-        return DesignResult(success=False, error=f"Structure unstable: {str(e)}")
+        solve_error = f"Structure unstable: {str(e)}"
     except Exception as e:
-        return DesignResult(success=False, error=f"Error: {str(e)}")
+        solve_error = f"Solve failed: {str(e)}"
+    
+    # Build bars list (with forces if solved, zero otherwise)
+    bars_list = []
+    for bar in bars:
+        L, _, _, _ = element_geometry_3d(nodes, bar)
+        bars_list.append(BarData(
+            id=bar.id,
+            ni=bar.ni,
+            nj=bar.nj,
+            length=round(L, 4),
+            force=round(forces.get(bar.id, 0), 2)
+        ))
+    
+    # Length bins
+    bins = compute_length_bins(lengths, tolerance=0.010)
+    
+    # Metrics (partial if solve failed)
+    metrics = MetricsData(
+        n_nodes=n_nodes,
+        n_bars=n_bars,
+        n_supports=n_supports,
+        max_displacement=round(max_displacement, 6),
+        max_displacement_mm=round(max_displacement * 1000, 2),
+        max_tension=round(max_tension, 2),
+        max_tension_kn=round(max_tension / 1000, 2),
+        max_compression=round(abs(max_compression), 2),
+        max_compression_kn=round(abs(max_compression) / 1000, 2),
+        volume=round(volume, 6),
+        total_length=round(total_length, 2),
+        n_length_bins=len(bins),
+        max_member_length=round(max(L for _, L in lengths), 4),
+        max_member_length_mm=round(max(L for _, L in lengths) * 1000, 1),
+        min_member_length=round(min(L for _, L in lengths), 4),
+    )
+    
+    return DesignResult(
+        success=solve_error is None,
+        error=solve_error,
+        nodes=nodes_list,
+        bars=bars_list,
+        support_nodes=support_node_ids,
+        metrics=metrics,
+        params=params.model_dump()
+    )
 
 
 # =============================================================================

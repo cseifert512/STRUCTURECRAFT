@@ -16,44 +16,37 @@ export function ControlPanel() {
   
   // Filter support options based on topology and grid size
   const availableSupports = SUPPORT_OPTIONS.filter((option) => {
-    // Diagrid + corners is always unstable
     if (params.topology === 'diagrid' && option.value === 'corners') return false
-    // Small grids need edge support
     if ((params.nx < 3 || params.ny < 3) && option.value === 'corners') return false
-    // Perimeter_4 needs larger grids
     if ((params.nx < 4 || params.ny < 4) && option.value === 'perimeter_4') return false
     return true
   })
   
-  // Auto-fix support if current selection is invalid
   const currentSupport = availableSupports.find(s => s.value === params.support_layout)
     ? params.support_layout
     : 'edges'
   
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="font-serif text-xl text-forest-800">Parameters</h2>
-          <p className="text-sm text-stone-400 mt-0.5">Adjust to see live updates</p>
-        </div>
+      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Parameters</h2>
         <button
           onClick={reset}
-          className="p-2 rounded-xl text-stone-400 hover:text-forest-700 hover:bg-cream-200 transition-colors"
-          title="Reset to defaults"
+          className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+          title="Reset"
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
       
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto space-y-6 pr-2 -mr-2">
+      <div className="flex-1 overflow-y-auto space-y-5 pr-1 -mr-1">
         {/* Geometry Section */}
         <section>
-          <h3 className="section-label">Geometry</h3>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <h3 className="label">Geometry</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <Slider
                 label="Width"
                 value={params.width}
@@ -73,7 +66,7 @@ export function ControlPanel() {
                 onChange={(v) => setParam('depth', v)}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Slider
                 label="Min Height"
                 value={params.min_height}
@@ -93,7 +86,7 @@ export function ControlPanel() {
                 onChange={(v) => setParam('max_height', Math.max(v, params.min_height + 0.25))}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Slider
                 label="Grid X"
                 value={params.nx}
@@ -116,8 +109,8 @@ export function ControlPanel() {
         
         {/* Structure Section */}
         <section>
-          <h3 className="section-label">Structure</h3>
-          <div className="space-y-4">
+          <h3 className="label">Structure</h3>
+          <div className="space-y-3">
             <Select
               label="Shape"
               value={params.heightfield}
@@ -141,8 +134,8 @@ export function ControlPanel() {
         
         {/* Material Section */}
         <section>
-          <h3 className="section-label">Material & Load</h3>
-          <div className="space-y-4">
+          <h3 className="label">Loading</h3>
+          <div className="space-y-3">
             <Slider
               label="Section Area"
               value={params.A_cm2}
@@ -166,28 +159,39 @@ export function ControlPanel() {
         
         {/* Display Options */}
         <section>
-          <h3 className="section-label">Display</h3>
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={colorByForce}
-                onChange={(e) => setColorByForce(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-10 h-6 rounded-full bg-cream-200 peer-checked:bg-sage-500 transition-colors" />
-              <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+          <h3 className="label">Display</h3>
+          <button
+            onClick={() => setColorByForce(!colorByForce)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded border transition-colors ${
+              colorByForce 
+                ? 'bg-slate-900 border-slate-900 text-white' 
+                : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+              </svg>
+              <span className="text-sm font-medium">Force Coloring</span>
             </div>
-            <span className="text-sm text-forest-700 group-hover:text-forest-900 transition-colors">
-              Color by force
+            <span className={`text-xs font-mono ${colorByForce ? 'text-slate-300' : 'text-slate-400'}`}>
+              {colorByForce ? 'ON' : 'OFF'}
             </span>
-          </label>
-          <p className="text-xs text-stone-400 mt-2 ml-[52px]">
-            Tension in warm tones, compression in green
-          </p>
+          </button>
+          {colorByForce && (
+            <div className="mt-2 flex items-center justify-center gap-4 text-xs text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-1 bg-[#E63946] rounded-sm" />
+                <span>Tension</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-1 bg-[#457B9D] rounded-sm" />
+                <span>Compression</span>
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>
   )
 }
-

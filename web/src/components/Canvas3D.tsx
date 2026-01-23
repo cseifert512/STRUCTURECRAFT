@@ -7,14 +7,14 @@ import * as THREE from 'three'
 import { useDesignStore } from '@/store/designStore'
 import { NodeData, BarData } from '@/lib/types'
 
-// Color palette for forces
+// Color palette - architectural/engineering style
 const COLORS = {
-  tension: new THREE.Color('#C4846C'),      // Clay/terracotta for tension
-  compression: new THREE.Color('#6B8F5B'),  // Sage for compression
-  neutral: new THREE.Color('#9CA89C'),      // Stone gray for neutral
-  support: new THREE.Color('#4A6741'),      // Forest for supports
-  node: new THREE.Color('#D4A574'),         // Clay for regular nodes
-  ground: new THREE.Color('#F5F0E8'),       // Cream for ground
+  tension: new THREE.Color('#E63946'),      // Red for tension
+  compression: new THREE.Color('#457B9D'),  // Steel blue for compression
+  neutral: new THREE.Color('#6C757D'),      // Neutral gray
+  support: new THREE.Color('#212529'),      // Dark for supports
+  node: new THREE.Color('#495057'),         // Dark gray for nodes
+  ground: new THREE.Color('#F8F9FA'),       // Light gray ground
 }
 
 interface StructureProps {
@@ -88,24 +88,24 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
               toThreeCoords(endNode.x, endNode.y, endNode.z),
             ]}
             color={color}
-            lineWidth={2.5}
+            lineWidth={1.5}
           />
         )
       })}
       
-      {/* Render nodes as spheres */}
+      {/* Render nodes as small spheres */}
       {nodes.map((node) => {
         const isSupport = supportNodes.includes(node.id)
         const color = isSupport ? COLORS.support : COLORS.node
-        const size = isSupport ? 0.12 : 0.06
+        const size = isSupport ? 0.08 : 0.03
         
         return (
           <mesh key={node.id} position={toThreeCoords(node.x, node.y, node.z)}>
-            <sphereGeometry args={[size, 16, 16]} />
+            <sphereGeometry args={[size, 12, 12]} />
             <meshStandardMaterial
               color={color}
-              roughness={0.4}
-              metalness={0.1}
+              roughness={0.6}
+              metalness={0.3}
             />
           </mesh>
         )
@@ -166,8 +166,8 @@ function Scene() {
         />
       </mesh>
       
-      {/* Structure */}
-      {nodes.length > 0 && !error && (
+      {/* Structure - show even if there's an error (geometry only) */}
+      {nodes.length > 0 && (
         <Structure
           nodes={nodes}
           bars={bars}
@@ -194,28 +194,40 @@ export function Canvas3D() {
   const { isLoading, error, nodes } = useDesignStore()
   
   return (
-    <div className="relative w-full h-[500px] rounded-3xl overflow-hidden bg-gradient-to-b from-cream-100 to-cream-200">
+    <div className="relative w-full h-full min-h-[400px] overflow-hidden bg-slate-100">
       {/* Loading overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-cream-100/80 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-3 border-sage-200 border-t-sage-500 rounded-full animate-spin" />
-            <span className="text-sm text-stone-500">Computing structure...</span>
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
+            <span className="text-xs text-slate-500 font-mono uppercase">Computing</span>
           </div>
         </div>
       )}
       
-      {/* Error state */}
-      {error && !isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-cream-100/90 backdrop-blur-sm p-8">
-          <div className="text-center max-w-md">
-            <div className="w-12 h-12 rounded-full bg-clay-100 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-clay-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      {/* Error banner - shows on top, doesn't hide structure */}
+      {error && !isLoading && nodes.length > 0 && (
+        <div className="absolute top-3 left-3 right-3 z-10">
+          <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-center gap-2">
+            <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-xs text-amber-800">Unstable - geometry only (no forces)</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Error state when no geometry */}
+      {error && !isLoading && nodes.length === 0 && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/95 p-6">
+          <div className="text-center max-w-sm">
+            <div className="w-10 h-10 rounded bg-red-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <h3 className="font-serif text-lg text-forest-800 mb-2">Structure Unstable</h3>
-            <p className="text-sm text-stone-500">{error}</p>
+            <h3 className="text-sm font-semibold text-slate-900 mb-1">Error</h3>
+            <p className="text-xs text-slate-500">{error}</p>
           </div>
         </div>
       )}
@@ -224,12 +236,7 @@ export function Canvas3D() {
       {nodes.length === 0 && !isLoading && !error && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-sage-100 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-sage-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-              </svg>
-            </div>
-            <p className="text-stone-400">Adjust parameters to generate a structure</p>
+            <p className="text-sm text-slate-400">Waiting for parameters...</p>
           </div>
         </div>
       )}
@@ -254,9 +261,6 @@ export function Canvas3D() {
           <Scene />
         </Canvas>
       </div>
-      
-      {/* Gradient overlay at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-cream-200/50 to-transparent pointer-events-none" />
     </div>
   )
 }

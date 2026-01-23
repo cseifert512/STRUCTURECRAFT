@@ -6,14 +6,13 @@ import { useDesignStore } from '@/store/designStore'
 import { ControlPanel } from '@/components/ControlPanel'
 import { MetricsCard } from '@/components/MetricsCard'
 import { ExportMenu } from '@/components/ExportMenu'
-import { motion } from 'framer-motion'
 
 // Dynamic import for Canvas3D to avoid SSR issues with Three.js
 const Canvas3D = dynamic(() => import('@/components/Canvas3D').then(mod => mod.Canvas3D), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[400px] rounded-3xl bg-cream-200 flex items-center justify-center">
-      <div className="text-stone-400">Loading 3D viewer...</div>
+    <div className="w-full h-full min-h-[400px] bg-slate-100 flex items-center justify-center border border-slate-200">
+      <div className="text-slate-400 text-sm">Loading viewer...</div>
     </div>
   ),
 })
@@ -27,172 +26,109 @@ export default function Home() {
   }, [generate])
   
   return (
-    <main className="min-h-screen bg-cream-100">
+    <main className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="border-b border-cream-200 bg-white/50 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="h-14 border-b border-slate-200 bg-white sticky top-0 z-40">
+        <div className="h-full max-w-screen-2xl mx-auto px-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Logo */}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sage-400 to-forest-600 flex items-center justify-center shadow-soft">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <div className="w-8 h-8 bg-slate-900 flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
                 <path d="M2 17l10 5 10-5" />
                 <path d="M2 12l10 5 10-5" />
               </svg>
             </div>
             <div>
-              <h1 className="font-serif text-xl text-forest-800">StructureCraft</h1>
-              <p className="text-xs text-stone-400">3D Canopy Designer</p>
+              <h1 className="text-sm font-semibold text-slate-900 tracking-tight">STRUCTURECRAFT</h1>
             </div>
           </div>
           
-          {/* Status indicator */}
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-clay-400 animate-pulse' : 'bg-sage-500'}`} />
-            <span className="text-xs text-stone-500">
-              {isLoading ? 'Computing...' : 'Ready'}
-            </span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`} />
+              <span className="text-xs text-slate-500 font-mono">
+                {isLoading ? 'COMPUTING' : 'READY'}
+              </span>
+            </div>
           </div>
         </div>
       </header>
       
       {/* Main content */}
-      <div className="max-w-screen-2xl mx-auto px-4 md:px-6 py-4 md:py-6">
-        {/* Desktop layout: 3 columns */}
-        <div className="hidden lg:grid grid-cols-12 gap-6 h-[calc(100vh-120px)]">
+      <div className="max-w-screen-2xl mx-auto p-4">
+        {/* Desktop layout */}
+        <div className="hidden lg:grid grid-cols-12 gap-4" style={{ height: 'calc(100vh - 88px)' }}>
           
           {/* Left panel - Controls */}
-          <motion.aside
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="col-span-3 card-organic overflow-hidden"
-          >
-            <ControlPanel />
-          </motion.aside>
+          <aside className="col-span-3 card rounded-lg overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto">
+              <ControlPanel />
+            </div>
+          </aside>
           
           {/* Center - 3D Canvas */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="col-span-6"
-          >
-            <Canvas3D />
+          <div className="col-span-6 flex flex-col gap-4">
+            <div className="flex-1 card rounded-lg overflow-hidden">
+              <Canvas3D />
+            </div>
             
             {/* Legend */}
-            <div className="mt-4 flex items-center justify-center gap-6 text-xs text-stone-500">
+            <div className="flex items-center justify-center gap-6 text-xs text-slate-500 py-2">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#4A6741]" />
-                <span>Supports</span>
+                <div className="w-2 h-2 rounded-full bg-slate-900" />
+                <span>Support</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#C4846C]" />
+                <div className="w-3 h-0.5 bg-[#E63946]" />
                 <span>Tension</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#6B8F5B]" />
+                <div className="w-3 h-0.5 bg-[#457B9D]" />
                 <span>Compression</span>
               </div>
             </div>
-          </motion.div>
+          </div>
           
           {/* Right panel - Metrics & Export */}
-          <motion.aside
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="col-span-3 space-y-4 overflow-y-auto"
-          >
+          <aside className="col-span-3 space-y-4 overflow-y-auto">
             <MetricsCard />
             <ExportMenu />
-            
-            {/* Help card */}
-            <div className="card-organic bg-sage-50/50">
-              <h4 className="text-sm font-medium text-forest-700 mb-2">Quick Tips</h4>
-              <ul className="text-xs text-stone-500 space-y-1.5">
-                <li className="flex items-start gap-2">
-                  <span className="text-sage-500">•</span>
-                  <span>Drag to rotate the 3D view</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-sage-500">•</span>
-                  <span>Scroll to zoom in/out</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-sage-500">•</span>
-                  <span>Use &quot;Grid&quot; topology for stability</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-sage-500">•</span>
-                  <span>Fewer length bins = easier fabrication</span>
-                </li>
-              </ul>
-            </div>
-          </motion.aside>
+          </aside>
           
         </div>
         
-        {/* Tablet/Mobile layout: stacked */}
+        {/* Mobile/Tablet layout */}
         <div className="lg:hidden space-y-4">
-          {/* 3D Canvas - Full width on top */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            className="h-[50vh] min-h-[300px]"
-          >
+          <div className="card rounded-lg overflow-hidden h-[50vh] min-h-[300px]">
             <Canvas3D />
-          </motion.div>
+          </div>
           
-          {/* Legend */}
-          <div className="flex items-center justify-center gap-4 text-xs text-stone-500 py-2">
+          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 py-2">
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#4A6741]" />
-              <span>Supports</span>
+              <div className="w-2 h-2 rounded-full bg-slate-900" />
+              <span>Support</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#C4846C]" />
+              <div className="w-2.5 h-0.5 bg-[#E63946]" />
               <span>Tension</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#6B8F5B]" />
+              <div className="w-2.5 h-0.5 bg-[#457B9D]" />
               <span>Compression</span>
             </div>
           </div>
           
-          {/* Controls and Metrics side by side on tablet */}
           <div className="grid md:grid-cols-2 gap-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="card-organic"
-            >
+            <div className="card rounded-lg overflow-hidden">
               <ControlPanel />
-            </motion.div>
-            
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="space-y-4"
-            >
+            </div>
+            <div className="space-y-4">
               <MetricsCard />
               <ExportMenu />
-            </motion.div>
+            </div>
           </div>
         </div>
       </div>
-      
-      {/* Footer */}
-      <footer className="border-t border-cream-200 bg-white/30">
-        <div className="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between text-xs text-stone-400">
-          <span>StructureCraft v1.0</span>
-          <span>Real-time 3D Spaceframe Design</span>
-        </div>
-      </footer>
     </main>
   )
 }
-

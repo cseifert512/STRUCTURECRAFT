@@ -1,23 +1,22 @@
 import type { Metadata } from 'next'
-import { DM_Serif_Display, Plus_Jakarta_Sans } from 'next/font/google'
+import { Inter, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 
-const dmSerif = DM_Serif_Display({
-  weight: '400',
+const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-dm-serif',
+  variable: '--font-sans',
   display: 'swap',
 })
 
-const jakarta = Plus_Jakarta_Sans({
+const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
-  variable: '--font-jakarta',
+  variable: '--font-mono',
   display: 'swap',
 })
 
 export const metadata: Metadata = {
-  title: 'StructureCraft | 3D Canopy Designer',
-  description: 'Design beautiful spaceframe canopy structures in real-time',
+  title: 'StructureCraft | Spaceframe Designer',
+  description: 'Real-time 3D structural design tool',
 }
 
 export default function RootLayout({
@@ -26,13 +25,10 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${dmSerif.variable} ${jakarta.variable}`}>
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
       <body className="font-sans">
-        {/* Subtle grain texture overlay */}
-        <div className="texture-overlay" aria-hidden="true" />
         {children}
       </body>
     </html>
   )
 }
-

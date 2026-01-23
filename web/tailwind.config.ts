@@ -9,66 +9,56 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Organic/Natural palette
-        cream: {
-          50: '#FDFCFA',
-          100: '#FAF9F6',
-          200: '#F5F0E8',
-          300: '#EDE5D8',
+        // Architectural/Engineering palette - serious, professional
+        slate: {
+          50: '#F8FAFC',
+          100: '#F1F5F9',
+          200: '#E2E8F0',
+          300: '#CBD5E1',
+          400: '#94A3B8',
+          500: '#64748B',
+          600: '#475569',
+          700: '#334155',
+          800: '#1E293B',
+          900: '#0F172A',
+          950: '#020617',
         },
-        sage: {
-          50: '#F4F7F4',
-          100: '#E8EFE8',
-          200: '#C5D5C5',
-          300: '#A3BBA3',
-          400: '#87A878',
-          500: '#6B8F5B',
-          600: '#4A6741',
-          700: '#3D5536',
-          800: '#2F422A',
+        steel: {
+          50: '#F0F4F8',
+          100: '#D9E2EC',
+          200: '#BCCCDC',
+          300: '#9FB3C8',
+          400: '#829AB1',
+          500: '#627D98',
+          600: '#486581',
+          700: '#334E68',
+          800: '#243B53',
+          900: '#102A43',
         },
-        clay: {
-          50: '#FBF8F6',
-          100: '#F7F0EC',
-          200: '#EDD9CE',
-          300: '#E3C2B0',
-          400: '#D4A574',
-          500: '#C4846C',
-          600: '#A66B52',
-          700: '#8A5742',
-        },
-        forest: {
-          600: '#4A6741',
-          700: '#3D5536',
-          800: '#2C3E2D',
-          900: '#1F2B1F',
-        },
-        stone: {
-          400: '#9CA89C',
-          500: '#6B7B6C',
-          600: '#5A695B',
+        accent: {
+          red: '#DC2626',
+          blue: '#2563EB',
+          green: '#16A34A',
         },
       },
       fontFamily: {
-        serif: ['var(--font-dm-serif)', 'Georgia', 'serif'],
-        sans: ['var(--font-jakarta)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'JetBrains Mono', 'monospace'],
+        sans: ['var(--font-sans)', 'Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        'soft': '0 2px 15px -3px rgba(44, 62, 45, 0.07), 0 10px 20px -2px rgba(44, 62, 45, 0.04)',
-        'soft-lg': '0 10px 40px -10px rgba(44, 62, 45, 0.12), 0 20px 25px -5px rgba(44, 62, 45, 0.05)',
-        'glow': '0 0 30px -5px rgba(135, 168, 120, 0.3)',
+        'subtle': '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+        'card': '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+        'elevated': '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
       },
       borderRadius: {
-        '4xl': '2rem',
-      },
-      backgroundImage: {
-        'grain': "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\")",
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'sm': '0.25rem',
+        'DEFAULT': '0.375rem',
+        'md': '0.5rem',
+        'lg': '0.75rem',
       },
       animation: {
-        'fade-in': 'fadeIn 0.5s ease-out',
-        'slide-up': 'slideUp 0.5s ease-out',
-        'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+        'fade-in': 'fadeIn 0.3s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -76,12 +66,8 @@ const config: Config = {
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        pulseSoft: {
-          '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.7' },
         },
       },
     },
@@ -90,4 +76,3 @@ const config: Config = {
 }
 
 export default config
-
