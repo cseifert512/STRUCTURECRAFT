@@ -23,9 +23,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import CONFIG
 from services import DesignService, ExportService
 from services.exploration_service import ExplorationService
+from services.design_service import compute_deflection_check, compute_utilization
+from services.pdf_service import generate_design_pdf, is_pdf_available
 from components.model_viewer import render_3d_model
 from components.parameter_inputs import get_stable_support_options, check_stability_warning
 from components.pareto_plot import render_pareto_plot, create_design_summary_table, get_design_details
+from components.design_card import render_design_card, render_compact_checks
 
 # Page configuration - must be first Streamlit command
 st.set_page_config(
@@ -193,7 +196,22 @@ with st.sidebar:
     A = A_cm2 / 10000  # Convert to m²
     
     gravity_kn = st.slider("Load (kN)", 20.0, 150.0, 50.0, 5.0, key="gravity_kn")
-    gravity_load = -gravity_kn * 1000  # Convert to N, negative for downward
+    
+    # Load factor toggle for service vs ultimate loads
+    st.markdown('<p class="sidebar-header">📊 Load Factor</p>', unsafe_allow_html=True)
+    load_factor = st.radio(
+        "Design Level",
+        options=["Service (1.0)", "Ultimate (1.4)", "Ultimate (1.6)"],
+        index=0,
+        horizontal=True,
+        key="load_factor",
+        help="Service = deflection check, Ultimate = strength check"
+    )
+    
+    # Parse factor and apply to gravity load
+    factor_map = {"Service (1.0)": 1.0, "Ultimate (1.4)": 1.4, "Ultimate (1.6)": 1.6}
+    applied_factor = factor_map[load_factor]
+    gravity_load = -gravity_kn * 1000 * applied_factor  # Convert to N with factor
     
     st.divider()
     
@@ -403,6 +421,17 @@ if success:
     with col_metrics:
         metrics = result['metrics']
         
+        # Compute design checks
+        span = min(brief.width, brief.depth)
+        defl_check = compute_deflection_check(metrics['max_displacement'], span)
+        util_check = compute_utilization(
+            result['nodes'], 
+            result['bars'], 
+            result['forces'], 
+            brief.A, 
+            brief.E
+        )
+        
         st.subheader("📊 Structure")
         col1, col2 = st.columns(2)
         with col1:
@@ -417,6 +446,9 @@ if success:
         st.subheader("📈 Performance")
         disp_mm = metrics['max_displacement'] * 1000
         st.metric("Max Displacement", f"{disp_mm:.2f} mm")
+        
+        # Show compact design checks
+        render_compact_checks(defl_check, util_check, metrics)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -439,6 +471,13 @@ if success:
         # Shipping warning
         if max_len_mm > 6000:
             st.warning("⚠️ Bars exceed 6m shipping limit")
+        
+        st.divider()
+        
+        # -------------------------------------------------------------------------
+        # DESIGN REPORT CARD
+        # -------------------------------------------------------------------------
+        all_checks_pass = render_design_card(defl_check, util_check, metrics)
         
         st.divider()
         
@@ -493,6 +532,28 @@ if success:
             mime="application/json",
             use_container_width=True,
         )
+        
+        # PDF Summary Export
+        if is_pdf_available():
+            try:
+                pdf_bytes = generate_design_pdf(
+                    params=params_dict,
+                    metrics=metrics,
+                    deflection_check=defl_check,
+                    utilization_check=util_check,
+                )
+                
+                st.download_button(
+                    label="📑 Design Summary (PDF)",
+                    data=pdf_bytes,
+                    file_name="canopy_design_summary.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.warning(f"PDF generation failed: {e}")
+        else:
+            st.info("💡 Install `reportlab` for PDF export: `pip install reportlab`")
 
 else:
     # Error state

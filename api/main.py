@@ -65,6 +65,8 @@ class DesignParams(BaseModel):
     support_layout: str = Field("edges", description="Support: edges, corners, perimeter_4")
     A_cm2: float = Field(8.0, ge=3.0, le=20.0, description="Cross-section area (cm²)")
     gravity_kn: float = Field(50.0, ge=20.0, le=150.0, description="Gravity load (kN)")
+    # Load factor for strength/serviceability
+    load_factor: float = Field(1.0, ge=1.0, le=2.0, description="Load factor: 1.0=service, 1.4/1.6=ultimate")
     # Material options
     material_type: str = Field("timber", description="Material: timber or steel")
     steel_section: str = Field("HSS4x4x1/4", description="Steel section if material=steel")
@@ -92,6 +94,33 @@ class BarData(BaseModel):
     force: float
     utilization: Optional[float] = None  # Stress utilization ratio (< 1.0 = pass)
     status: Optional[str] = None         # "PASS" or "FAIL"
+
+
+class DeflectionLimitCheck(BaseModel):
+    """Single deflection limit check result."""
+    limit_mm: float
+    actual_mm: float
+    ratio: float
+    status: str  # "PASS" or "FAIL"
+
+
+class DeflectionCheck(BaseModel):
+    """Deflection serviceability check results."""
+    L_360: DeflectionLimitCheck
+    L_240: DeflectionLimitCheck
+    L_180: DeflectionLimitCheck
+    governing: str = "L_240"
+    overall_pass: bool
+
+
+class DesignReportCard(BaseModel):
+    """Summary of design compliance checks."""
+    deflection_pass: bool
+    strength_pass: bool
+    buckling_pass: bool
+    shipping_pass: bool  # Member length < shipping limit
+    overall_pass: bool
+    summary: str  # Human-readable summary
 
 
 class MetricsData(BaseModel):
@@ -126,6 +155,12 @@ class MetricsData(BaseModel):
     steel_section_name: Optional[str] = None
     # Connection info
     connection_type: Optional[str] = None
+    # Load factor applied
+    load_factor: Optional[float] = None
+    # Deflection check results
+    deflection_check: Optional[DeflectionCheck] = None
+    # Design report card
+    design_report_card: Optional[DesignReportCard] = None
 
 
 class DesignResult(BaseModel):
@@ -221,6 +256,103 @@ def check_stability(topology: str, support_layout: str, nx: int, ny: int, height
 
 
 # =============================================================================
+# Deflection and Design Report Card Helpers
+# =============================================================================
+
+def compute_deflection_check(max_disp: float, span: float) -> DeflectionCheck:
+    """
+    Check deflection against common serviceability limits.
+    
+    Args:
+        max_disp: Maximum displacement (m)
+        span: Governing span (m) - typically min(width, depth)
+    
+    Returns:
+        DeflectionCheck with limits, ratios, and pass/fail status
+    """
+    limits = {
+        'L_360': span / 360,  # Floor live load
+        'L_240': span / 240,  # Total load (typical for roofs/canopies)
+        'L_180': span / 180,  # Roof with plaster ceiling
+    }
+    
+    results = {}
+    for name, limit in limits.items():
+        ratio = max_disp / limit if limit > 0 else 0
+        results[name] = DeflectionLimitCheck(
+            limit_mm=round(limit * 1000, 2),
+            actual_mm=round(max_disp * 1000, 2),
+            ratio=round(ratio, 3),
+            status='PASS' if ratio <= 1.0 else 'FAIL'
+        )
+    
+    # Overall pass if meets L/240 (typical for roofs/canopies)
+    governing_limit = 'L_240'
+    overall_pass = results[governing_limit].status == 'PASS'
+    
+    return DeflectionCheck(
+        L_360=results['L_360'],
+        L_240=results['L_240'],
+        L_180=results['L_180'],
+        governing=governing_limit,
+        overall_pass=overall_pass,
+    )
+
+
+def compute_design_report_card(
+    deflection_check: Optional[DeflectionCheck],
+    max_utilization: Optional[float],
+    buckling_factor: Optional[float],
+    max_member_length: float,
+    shipping_limit: float = 6.0  # meters
+) -> DesignReportCard:
+    """
+    Generate a summary report card for the design.
+    
+    Args:
+        deflection_check: Deflection check results
+        max_utilization: Worst member utilization ratio
+        buckling_factor: Critical buckling load factor
+        max_member_length: Maximum member length (m)
+        shipping_limit: Maximum transportable length (m)
+    
+    Returns:
+        DesignReportCard with pass/fail for each check
+    """
+    deflection_pass = deflection_check.overall_pass if deflection_check else True
+    strength_pass = max_utilization is not None and max_utilization <= 1.0
+    buckling_pass = buckling_factor is not None and buckling_factor >= 1.0
+    shipping_pass = max_member_length <= shipping_limit
+    
+    overall_pass = deflection_pass and strength_pass and buckling_pass and shipping_pass
+    
+    # Build summary
+    issues = []
+    if not deflection_pass:
+        issues.append("deflection exceeds limits")
+    if not strength_pass:
+        issues.append("overstressed members")
+    if not buckling_pass:
+        issues.append("buckling risk")
+    if not shipping_pass:
+        issues.append(f"members exceed {shipping_limit}m shipping limit")
+    
+    if overall_pass:
+        summary = "All checks pass ✓"
+    else:
+        summary = f"Issues: {', '.join(issues)}"
+    
+    return DesignReportCard(
+        deflection_pass=deflection_pass,
+        strength_pass=strength_pass,
+        buckling_pass=buckling_pass,
+        shipping_pass=shipping_pass,
+        overall_pass=overall_pass,
+        summary=summary,
+    )
+
+
+# =============================================================================
 # Design Generation
 # =============================================================================
 
@@ -237,7 +369,8 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
     
     # Convert params
     A = params.A_cm2 / 10000  # cm² to m²
-    gravity_load = -params.gravity_kn * 1000  # kN to N, negative for down
+    # Apply load factor to gravity load
+    gravity_load = -params.gravity_kn * 1000 * params.load_factor  # kN to N, negative for down
     
     # Auto-adjust support layout for non-dome shapes
     # Flat, ridge, saddle shapes need edge supports for stability
@@ -489,6 +622,22 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         critical_member_id = max_util_entry[0]
         n_failing_members = sum(1 for _, u in utils if u > 1.0)
     
+    # Compute deflection check (use governing span = min(width, depth))
+    max_member_len = max(L for _, L in lengths)
+    deflection_check = None
+    if max_displacement > 0:
+        governing_span = min(params.width, params.depth)
+        deflection_check = compute_deflection_check(max_displacement, governing_span)
+    
+    # Compute design report card
+    design_report_card = compute_design_report_card(
+        deflection_check=deflection_check,
+        max_utilization=max_utilization,
+        buckling_factor=buckling_factor,
+        max_member_length=max_member_len,
+        shipping_limit=6.0  # 6m typical shipping limit
+    )
+    
     # Metrics (partial if solve failed)
     metrics = MetricsData(
         n_nodes=n_nodes,
@@ -503,8 +652,8 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         volume=round(volume, 6),
         total_length=round(total_length, 2),
         n_length_bins=len(bins),
-        max_member_length=round(max(L for _, L in lengths), 4),
-        max_member_length_mm=round(max(L for _, L in lengths) * 1000, 1),
+        max_member_length=round(max_member_len, 4),
+        max_member_length_mm=round(max_member_len * 1000, 1),
         min_member_length=round(min(L for _, L in lengths), 4),
         # Engineering checks
         buckling_factor=round(buckling_factor, 2) if buckling_factor is not None else None,
@@ -521,6 +670,12 @@ def generate_and_solve(params: DesignParams) -> DesignResult:
         steel_section_name=params.steel_section if params.material_type == 'steel' else None,
         # Connection info
         connection_type=params.connection_type,
+        # Load factor applied
+        load_factor=params.load_factor,
+        # Deflection check results
+        deflection_check=deflection_check,
+        # Design report card
+        design_report_card=design_report_card,
     )
     
     return DesignResult(
@@ -602,6 +757,163 @@ async def export_json(params: DesignParams):
         iter([json.dumps(model, indent=2)]),
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=canopy_model.json"}
+    )
+
+
+@app.post("/api/export/pdf")
+async def export_pdf(params: DesignParams):
+    """Export design report as PDF."""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib import colors
+    except ImportError:
+        raise HTTPException(status_code=500, detail="reportlab not installed - run: pip install reportlab")
+    
+    result = generate_and_solve(params)
+    
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.error)
+    
+    # Create PDF in memory
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=12,
+        textColor=colors.HexColor('#1e3a5f')
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=12,
+        spaceBefore=12,
+        spaceAfter=6,
+        textColor=colors.HexColor('#1e3a5f')
+    )
+    
+    story = []
+    
+    # Title
+    story.append(Paragraph("StructureCraft Design Report", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Design Parameters
+    story.append(Paragraph("Design Parameters", heading_style))
+    param_data = [
+        ['Parameter', 'Value'],
+        ['Footprint', f"{params.width} × {params.depth} m"],
+        ['Grid', f"{params.nx} × {params.ny}"],
+        ['Height Range', f"{params.min_height} - {params.max_height} m"],
+        ['Shape', params.heightfield.capitalize()],
+        ['Topology', params.topology.capitalize()],
+        ['Support Layout', params.support_layout.replace('_', ' ').title()],
+        ['Material', params.material_type.capitalize()],
+        ['Load Factor', str(params.load_factor)],
+        ['Gravity Load', f"{params.gravity_kn} kN"],
+    ]
+    
+    param_table = Table(param_data, colWidths=[2*inch, 2*inch])
+    param_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f5f5f5')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(param_table)
+    story.append(Spacer(1, 12))
+    
+    # Structural Metrics
+    if result.metrics:
+        story.append(Paragraph("Structural Analysis Results", heading_style))
+        m = result.metrics
+        metrics_data = [
+            ['Metric', 'Value'],
+            ['Nodes', str(m.n_nodes)],
+            ['Members', str(m.n_bars)],
+            ['Supports', str(m.n_supports)],
+            ['Total Length', f"{m.total_length:.1f} m"],
+            ['Volume', f"{m.volume:.4f} m³"],
+            ['Max Displacement', f"{m.max_displacement_mm:.1f} mm"],
+            ['Max Tension', f"{m.max_tension_kn:.1f} kN"],
+            ['Max Compression', f"{m.max_compression_kn:.1f} kN"],
+        ]
+        
+        if m.max_utilization is not None:
+            metrics_data.append(['Max Utilization', f"{m.max_utilization:.2%}"])
+        if m.buckling_factor is not None:
+            metrics_data.append(['Buckling Factor', f"{m.buckling_factor:.2f}"])
+        
+        metrics_table = Table(metrics_data, colWidths=[2*inch, 2*inch])
+        metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f5f5f5')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(metrics_table)
+        story.append(Spacer(1, 12))
+        
+        # Design Report Card
+        if m.design_report_card:
+            story.append(Paragraph("Design Report Card", heading_style))
+            rc = m.design_report_card
+            
+            def status_text(passed: bool) -> str:
+                return "✓ PASS" if passed else "✗ FAIL"
+            
+            card_data = [
+                ['Check', 'Status'],
+                ['Deflection (L/240)', status_text(rc.deflection_pass)],
+                ['Member Strength', status_text(rc.strength_pass)],
+                ['Buckling Stability', status_text(rc.buckling_pass)],
+                ['Shipping (<6m)', status_text(rc.shipping_pass)],
+                ['OVERALL', status_text(rc.overall_pass)],
+            ]
+            
+            card_table = Table(card_data, colWidths=[2*inch, 1.5*inch])
+            card_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BACKGROUND', (-1, -1), (-1, -1), 
+                 colors.HexColor('#d4edda') if rc.overall_pass else colors.HexColor('#f8d7da')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ]))
+            story.append(card_table)
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(f"<i>{rc.summary}</i>", styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=canopy_design_report.pdf"}
     )
 
 

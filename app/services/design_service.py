@@ -5,7 +5,7 @@ Design service: handles single design generation and analysis.
 
 import sys
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional, Any, List
 import numpy as np
 
 # Add project root to path
@@ -17,6 +17,113 @@ from mini_branch.v3d.elements import truss3d_global_stiffness, truss3d_axial_for
 from mini_branch.kernel.dof import DOFManager
 from mini_branch.kernel.assemble import assemble_global_K
 from mini_branch.kernel.solve import solve_linear, MechanismError
+from mini_branch.checks.steel import SteelSection, check_steel_member
+
+
+def compute_deflection_check(max_disp: float, span: float) -> Dict[str, Any]:
+    """
+    Check deflection against common serviceability limits.
+    
+    Args:
+        max_disp: Maximum displacement (m)
+        span: Governing span (m) - typically min(width, depth)
+    
+    Returns:
+        dict with limits, ratios, and pass/fail status
+    """
+    limits = {
+        'L/360': span / 360,  # Floor live load
+        'L/240': span / 240,  # Total load (typical for roofs/canopies)
+        'L/180': span / 180,  # Roof with plaster ceiling
+    }
+    
+    results = {}
+    for name, limit in limits.items():
+        ratio = max_disp / limit if limit > 0 else 0
+        results[name] = {
+            'limit_mm': limit * 1000,
+            'actual_mm': max_disp * 1000,
+            'ratio': ratio,
+            'status': 'PASS' if ratio <= 1.0 else 'FAIL'
+        }
+    
+    # Overall pass if meets L/240 (typical for roofs/canopies)
+    governing_limit = 'L/240'
+    overall_pass = results[governing_limit]['status'] == 'PASS'
+    
+    return {
+        'checks': results,
+        'governing': governing_limit,
+        'overall_pass': overall_pass,
+    }
+
+
+def compute_utilization(nodes: Dict, bars: List, forces: Dict, A: float, E: float = 210e9) -> Dict[str, Any]:
+    """
+    Compute member utilization ratios using AISC-style checks.
+    
+    Args:
+        nodes: Node dictionary {id: Node3D}
+        bars: List of bar elements
+        forces: Dictionary {bar_id: axial_force}
+        A: Cross-sectional area (m²)
+        E: Young's modulus (Pa)
+    
+    Returns:
+        dict with worst_util, n_pass, n_fail, utilizations
+    """
+    # Create generic section from area
+    # Approximate as solid round for radius of gyration
+    r = np.sqrt(A / np.pi)  # Approximate radius of gyration for solid round
+    section = SteelSection(
+        name='Custom',
+        A=A,
+        I=A * r**2 / 4,  # Approximate I for solid round
+        r=r,
+        S=A * r / 2,  # Approximate S
+        Fy=250e6,  # 250 MPa yield (conservative steel)
+        E=E
+    )
+    
+    utilizations = {}
+    for bar in bars:
+        # Get member length
+        ni, nj = nodes[bar.ni], nodes[bar.nj]
+        L = np.sqrt((nj.x - ni.x)**2 + (nj.y - ni.y)**2 + (nj.z - ni.z)**2)
+        
+        N = forces.get(bar.id, 0.0)
+        result = check_steel_member(N, section, L, K=1.0)
+        utilizations[bar.id] = {
+            'N_kN': N / 1000,
+            'util': result['axial_util'],
+            'combined_util': result['combined_util'],
+            'status': result['status'],
+            'governing': result['governing'],
+        }
+    
+    if not utilizations:
+        return {
+            'worst_bar': None,
+            'worst_util': 0.0,
+            'n_pass': 0,
+            'n_fail': 0,
+            'all_pass': True,
+            'utilizations': {},
+        }
+    
+    worst_id = max(utilizations, key=lambda k: utilizations[k]['util'])
+    worst_util = utilizations[worst_id]['util']
+    n_pass = sum(1 for u in utilizations.values() if u['status'] == 'PASS')
+    n_fail = len(utilizations) - n_pass
+    
+    return {
+        'worst_bar': worst_id,
+        'worst_util': worst_util,
+        'n_pass': n_pass,
+        'n_fail': n_fail,
+        'all_pass': n_fail == 0,
+        'utilizations': utilizations,
+    }
 
 
 class DesignService:

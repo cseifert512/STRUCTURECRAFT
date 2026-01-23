@@ -12,6 +12,8 @@ export interface DesignParams {
   support_layout: 'edges' | 'corners' | 'perimeter_4'
   A_cm2: number
   gravity_kn: number
+  // Load factor for strength/serviceability
+  load_factor: number  // 1.0 = service, 1.4/1.6 = ultimate
   // Material options
   material_type: 'timber' | 'steel'
   steel_section: string
@@ -37,6 +39,32 @@ export interface BarData {
   force: number
   utilization?: number    // Stress utilization ratio (< 1.0 = pass)
   status?: 'PASS' | 'FAIL'
+}
+
+// Deflection check interfaces
+export interface DeflectionLimitCheck {
+  limit_mm: number
+  actual_mm: number
+  ratio: number
+  status: 'PASS' | 'FAIL'
+}
+
+export interface DeflectionCheck {
+  L_360: DeflectionLimitCheck
+  L_240: DeflectionLimitCheck
+  L_180: DeflectionLimitCheck
+  governing: string
+  overall_pass: boolean
+}
+
+// Design report card
+export interface DesignReportCard {
+  deflection_pass: boolean
+  strength_pass: boolean
+  buckling_pass: boolean
+  shipping_pass: boolean
+  overall_pass: boolean
+  summary: string
 }
 
 export interface MetricsData {
@@ -70,6 +98,12 @@ export interface MetricsData {
   steel_section_name?: string
   // Connection info
   connection_type?: string
+  // Load factor applied
+  load_factor?: number
+  // Deflection check results
+  deflection_check?: DeflectionCheck
+  // Design report card
+  design_report_card?: DesignReportCard
 }
 
 export interface DesignResult {
@@ -95,6 +129,7 @@ export const DEFAULT_PARAMS: DesignParams = {
   support_layout: 'edges',
   A_cm2: 8.0,
   gravity_kn: 50.0,
+  load_factor: 1.0,
   material_type: 'timber',
   steel_section: 'HSS4x4x1/4',
   connection_type: 'pinned',
