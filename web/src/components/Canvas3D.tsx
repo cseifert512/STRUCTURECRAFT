@@ -32,9 +32,8 @@ interface StructureProps {
 }
 
 function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) {
-  // Determine color mode: force coloring or utilization coloring
-  // For now, colorByForce toggles between force and utilization
-  const colorMode: ColorMode = colorByForce ? 'utilization' : 'none'
+  // Determine color mode: force coloring (tension/compression)
+  const colorMode: ColorMode = colorByForce ? 'force' : 'none'
   // Create node lookup map
   const nodeMap = useMemo(() => {
     const map = new Map<number, NodeData>()
