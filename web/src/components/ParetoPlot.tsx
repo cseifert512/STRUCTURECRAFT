@@ -278,3 +278,4 @@ export function ParetoPlot({ designs, width = 500, height = 350 }: ParetoPlotPro
 
 
 
+

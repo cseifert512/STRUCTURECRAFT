@@ -270,3 +270,4 @@ def effective_modal_mass(
 
 
 
+

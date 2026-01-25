@@ -11,14 +11,31 @@ import {
   ExploreDesignData,
   ExploreResult,
   DEFAULT_EXPLORE_SETTINGS,
+  // 2D Frame types
+  Frame2DParams,
+  Frame2DResult,
+  Frame2DNodeData,
+  Frame2DElementData,
+  Frame2DMetrics,
+  ElementDiagramData,
+  ReactionData,
+  DEFAULT_FRAME2D_PARAMS,
+  DiagramType,
+  AnalysisMode,
 } from '@/lib/types'
-import { generateDesign, exploreDesigns } from '@/lib/api'
+import { generateDesign, exploreDesigns, generateFrame2D } from '@/lib/api'
+
+// Color mode for 3D visualization
+export type ColorMode = 'none' | 'force' | 'utilization'
 
 interface DesignState {
-  // Parameters
+  // Analysis mode
+  analysisMode: AnalysisMode
+  
+  // 3D Parameters
   params: DesignParams
   
-  // Results
+  // 3D Results
   isLoading: boolean
   error: string | null
   nodes: NodeData[]
@@ -26,8 +43,26 @@ interface DesignState {
   supportNodes: number[]
   metrics: MetricsData | null
   
-  // Color mode for 3D view
-  colorByForce: boolean
+  // 3D Visualization
+  colorMode: ColorMode
+  showDeflectedShape: boolean
+  deflectionScale3D: number
+  
+  // 2D Frame Parameters
+  frame2dParams: Frame2DParams
+  
+  // 2D Frame Results
+  frame2dLoading: boolean
+  frame2dError: string | null
+  frame2dNodes: Frame2DNodeData[]
+  frame2dElements: Frame2DElementData[]
+  frame2dReactions: ReactionData[]
+  frame2dMetrics: Frame2DMetrics | null
+  frame2dDiagrams: ElementDiagramData[]
+  
+  // 2D Visualization
+  diagramType: DiagramType
+  showDeflectedShape2D: boolean
   
   // Exploration state
   exploreSettings: {
@@ -52,12 +87,25 @@ interface DesignState {
     paretoOnly: boolean
   }
   
-  // Actions
+  // Mode actions
+  setAnalysisMode: (mode: AnalysisMode) => void
+  
+  // 3D Actions
   setParam: <K extends keyof DesignParams>(key: K, value: DesignParams[K]) => void
   setParams: (params: Partial<DesignParams>) => void
   generate: () => Promise<void>
-  setColorByForce: (value: boolean) => void
+  setColorMode: (value: ColorMode) => void
+  setShowDeflectedShape: (show: boolean) => void
+  setDeflectionScale3D: (scale: number) => void
   reset: () => void
+  
+  // 2D Frame Actions
+  setFrame2DParam: <K extends keyof Frame2DParams>(key: K, value: Frame2DParams[K]) => void
+  setFrame2DParams: (params: Partial<Frame2DParams>) => void
+  generateFrame2D: () => Promise<void>
+  setDiagramType: (type: DiagramType) => void
+  setShowDeflectedShape2D: (show: boolean) => void
+  resetFrame2D: () => void
   
   // Exploration actions
   setExploreSettings: (settings: Partial<typeof DEFAULT_EXPLORE_SETTINGS>) => void
@@ -71,9 +119,13 @@ interface DesignState {
 
 // Debounce helper
 let debounceTimer: NodeJS.Timeout | null = null
+let debounceTimer2D: NodeJS.Timeout | null = null
 
 export const useDesignStore = create<DesignState>((set, get) => ({
   // Initial state
+  analysisMode: '3d',
+  
+  // 3D state
   params: DEFAULT_PARAMS,
   isLoading: false,
   error: null,
@@ -81,7 +133,21 @@ export const useDesignStore = create<DesignState>((set, get) => ({
   bars: [],
   supportNodes: [],
   metrics: null,
-  colorByForce: false,
+  colorMode: 'none',
+  showDeflectedShape: false,
+  deflectionScale3D: 50,
+  
+  // 2D Frame state
+  frame2dParams: DEFAULT_FRAME2D_PARAMS,
+  frame2dLoading: false,
+  frame2dError: null,
+  frame2dNodes: [],
+  frame2dElements: [],
+  frame2dReactions: [],
+  frame2dMetrics: null,
+  frame2dDiagrams: [],
+  diagramType: 'none',
+  showDeflectedShape2D: true,
   
   // Exploration initial state
   exploreSettings: { ...DEFAULT_EXPLORE_SETTINGS },
@@ -100,7 +166,18 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     paretoOnly: false,
   },
   
-  // Set a single parameter
+  // Mode actions
+  setAnalysisMode: (mode) => {
+    set({ analysisMode: mode })
+    // Trigger generation for the new mode
+    if (mode === '3d') {
+      get().generate()
+    } else {
+      get().generateFrame2D()
+    }
+  },
+  
+  // Set a single 3D parameter
   setParam: (key, value) => {
     set((state) => ({
       params: { ...state.params, [key]: value },
@@ -113,7 +190,7 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     }, 200)
   },
   
-  // Set multiple parameters
+  // Set multiple 3D parameters
   setParams: (params) => {
     set((state) => ({
       params: { ...state.params, ...params },
@@ -125,7 +202,7 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     }, 200)
   },
   
-  // Generate design from API
+  // Generate 3D design from API
   generate: async () => {
     const { params } = get()
     set({ isLoading: true, error: null })
@@ -165,10 +242,14 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     }
   },
   
-  // Toggle force coloring
-  setColorByForce: (value) => set({ colorByForce: value }),
+  // Set color mode
+  setColorMode: (value) => set({ colorMode: value }),
   
-  // Reset to defaults
+  // 3D deflected shape toggle
+  setShowDeflectedShape: (show) => set({ showDeflectedShape: show }),
+  setDeflectionScale3D: (scale) => set({ deflectionScale3D: scale }),
+  
+  // Reset 3D to defaults
   reset: () => {
     set({
       params: DEFAULT_PARAMS,
@@ -179,6 +260,87 @@ export const useDesignStore = create<DesignState>((set, get) => ({
       error: null,
     })
     get().generate()
+  },
+  
+  // 2D Frame Actions
+  setFrame2DParam: (key, value) => {
+    set((state) => ({
+      frame2dParams: { ...state.frame2dParams, [key]: value },
+    }))
+    
+    // Debounced generate
+    if (debounceTimer2D) clearTimeout(debounceTimer2D)
+    debounceTimer2D = setTimeout(() => {
+      get().generateFrame2D()
+    }, 200)
+  },
+  
+  setFrame2DParams: (params) => {
+    set((state) => ({
+      frame2dParams: { ...state.frame2dParams, ...params },
+    }))
+    
+    if (debounceTimer2D) clearTimeout(debounceTimer2D)
+    debounceTimer2D = setTimeout(() => {
+      get().generateFrame2D()
+    }, 200)
+  },
+  
+  generateFrame2D: async () => {
+    const { frame2dParams } = get()
+    set({ frame2dLoading: true, frame2dError: null })
+    
+    try {
+      const result = await generateFrame2D(frame2dParams)
+      
+      if (result.success && result.nodes && result.elements) {
+        set({
+          frame2dLoading: false,
+          frame2dError: null,
+          frame2dNodes: result.nodes,
+          frame2dElements: result.elements,
+          frame2dReactions: result.reactions || [],
+          frame2dMetrics: result.metrics || null,
+          frame2dDiagrams: result.diagrams || [],
+        })
+      } else {
+        set({
+          frame2dLoading: false,
+          frame2dError: result.error || 'Failed to generate 2D frame',
+          frame2dNodes: [],
+          frame2dElements: [],
+          frame2dReactions: [],
+          frame2dMetrics: null,
+          frame2dDiagrams: [],
+        })
+      }
+    } catch (err) {
+      set({
+        frame2dLoading: false,
+        frame2dError: err instanceof Error ? err.message : 'Failed to generate 2D frame',
+        frame2dNodes: [],
+        frame2dElements: [],
+        frame2dReactions: [],
+        frame2dMetrics: null,
+        frame2dDiagrams: [],
+      })
+    }
+  },
+  
+  setDiagramType: (type) => set({ diagramType: type }),
+  setShowDeflectedShape2D: (show) => set({ showDeflectedShape2D: show }),
+  
+  resetFrame2D: () => {
+    set({
+      frame2dParams: DEFAULT_FRAME2D_PARAMS,
+      frame2dNodes: [],
+      frame2dElements: [],
+      frame2dReactions: [],
+      frame2dMetrics: null,
+      frame2dDiagrams: [],
+      frame2dError: null,
+    })
+    get().generateFrame2D()
   },
   
   // Exploration actions
@@ -271,6 +433,7 @@ export const useDesignStore = create<DesignState>((set, get) => ({
         connection_type: params.connection_type,
         pdelta_enabled: params.pdelta_enabled,
         modal_enabled: params.modal_enabled,
+        load_factor: params.load_factor,
       },
       selectedDesignIndex: null,
     })
@@ -289,4 +452,3 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     }))
   },
 }))
-

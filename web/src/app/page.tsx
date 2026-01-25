@@ -7,6 +7,7 @@ import { ControlPanel } from '@/components/ControlPanel'
 import { MetricsCard } from '@/components/MetricsCard'
 import { ExportMenu } from '@/components/ExportMenu'
 import { ExplorePanel } from '@/components/ExplorePanel'
+import { DiagramPanel } from '@/components/DiagramPanel'
 
 // Dynamic import for Canvas3D to avoid SSR issues with Three.js
 const Canvas3D = dynamic(() => import('@/components/Canvas3D').then(mod => mod.Canvas3D), {
@@ -18,13 +19,29 @@ const Canvas3D = dynamic(() => import('@/components/Canvas3D').then(mod => mod.C
   ),
 })
 
+// Dynamic import for Canvas2D (SVG-based, less critical but consistent)
+const Canvas2D = dynamic(() => import('@/components/Canvas2D').then(mod => mod.Canvas2D), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full min-h-[400px] bg-slate-100 flex items-center justify-center border border-slate-200">
+      <div className="text-slate-400 text-sm">Loading 2D viewer...</div>
+    </div>
+  ),
+})
+
 export default function Home() {
-  const { generate, isLoading } = useDesignStore()
+  const { generate, generateFrame2D, analysisMode, isLoading, frame2dLoading } = useDesignStore()
   
   // Initial generation on mount
   useEffect(() => {
-    generate()
-  }, [generate])
+    if (analysisMode === '3d') {
+      generate()
+    } else {
+      generateFrame2D()
+    }
+  }, [generate, generateFrame2D, analysisMode])
+
+  const loading = analysisMode === '3d' ? isLoading : frame2dLoading
   
   return (
     <main className="min-h-screen bg-slate-50">
@@ -45,10 +62,17 @@ export default function Home() {
           </div>
           
           <div className="flex items-center gap-4">
+            {/* Mode indicator */}
+            <div className="hidden sm:flex items-center gap-2 px-2 py-1 bg-slate-100 rounded text-xs">
+              <span className={analysisMode === '3d' ? 'font-medium text-slate-900' : 'text-slate-400'}>3D</span>
+              <span className="text-slate-300">|</span>
+              <span className={analysisMode === '2d' ? 'font-medium text-slate-900' : 'text-slate-400'}>2D</span>
+            </div>
+            
             <div className="flex items-center gap-2">
-              <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`} />
               <span className="text-xs text-slate-500 font-mono">
-                {isLoading ? 'COMPUTING' : 'READY'}
+                {loading ? 'COMPUTING' : 'READY'}
               </span>
             </div>
           </div>
@@ -69,74 +93,117 @@ export default function Home() {
               </div>
             </aside>
             
-            {/* Center - 3D Canvas */}
+            {/* Center - Canvas (3D or 2D based on mode) */}
             <div className="col-span-6 flex flex-col gap-4">
               <div className="flex-1 card rounded-lg overflow-hidden">
-                <Canvas3D />
+                {analysisMode === '3d' ? <Canvas3D /> : <Canvas2D />}
               </div>
               
-              {/* Legend */}
-              <div className="flex items-center justify-center gap-6 text-xs text-slate-500 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-slate-900" />
-                  <span>Support</span>
+              {/* Legend - different for 3D and 2D */}
+              {analysisMode === '3d' ? (
+                <div className="flex items-center justify-center gap-6 text-xs text-slate-500 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-slate-900" />
+                    <span>Support</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-0.5 bg-[#E63946]" />
+                    <span>Tension</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-0.5 bg-[#457B9D]" />
+                    <span>Compression</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-0.5 bg-[#E63946]" />
-                  <span>Tension</span>
+              ) : (
+                <div className="flex items-center justify-center gap-6 text-xs text-slate-500 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-0.5 bg-[#2C3E50]" />
+                    <span>Undeformed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-0.5 bg-[#E74C3C]" style={{ borderBottom: '2px dashed #E74C3C' }} />
+                    <span>Deflected</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-[#9B59B6] opacity-30 border border-[#9B59B6]" />
+                    <span>Force Diagram</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-0.5 bg-[#457B9D]" />
-                  <span>Compression</span>
-                </div>
-              </div>
+              )}
             </div>
             
-            {/* Right panel - Metrics & Export */}
+            {/* Right panel - Metrics & Export (3D) or DiagramPanel (2D) */}
             <aside className="col-span-3 space-y-4 overflow-y-auto">
-              <MetricsCard />
-              <ExportMenu />
+              {analysisMode === '3d' ? (
+                <>
+                  <MetricsCard />
+                  <ExportMenu />
+                </>
+              ) : (
+                <DiagramPanel />
+              )}
             </aside>
             
           </div>
           
-          {/* Explore panel - full width below main content */}
-          <ExplorePanel />
+          {/* Explore panel - full width below main content (3D mode only) */}
+          {analysisMode === '3d' && <ExplorePanel />}
         </div>
         
         {/* Mobile/Tablet layout */}
         <div className="lg:hidden space-y-4">
           <div className="card rounded-lg overflow-hidden h-[50vh] min-h-[300px]">
-            <Canvas3D />
+            {analysisMode === '3d' ? <Canvas3D /> : <Canvas2D />}
           </div>
           
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 py-2">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-slate-900" />
-              <span>Support</span>
+          {/* Legend */}
+          {analysisMode === '3d' ? (
+            <div className="flex items-center justify-center gap-4 text-xs text-slate-500 py-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-slate-900" />
+                <span>Support</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-0.5 bg-[#E63946]" />
+                <span>Tension</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-0.5 bg-[#457B9D]" />
+                <span>Compression</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-0.5 bg-[#E63946]" />
-              <span>Tension</span>
+          ) : (
+            <div className="flex items-center justify-center gap-4 text-xs text-slate-500 py-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-0.5 bg-[#2C3E50]" />
+                <span>Original</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-0.5 bg-[#E74C3C]" />
+                <span>Deflected</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-0.5 bg-[#457B9D]" />
-              <span>Compression</span>
-            </div>
-          </div>
+          )}
           
           <div className="grid md:grid-cols-2 gap-4">
             <div className="card rounded-lg overflow-hidden">
               <ControlPanel />
             </div>
             <div className="space-y-4">
-              <MetricsCard />
-              <ExportMenu />
+              {analysisMode === '3d' ? (
+                <>
+                  <MetricsCard />
+                  <ExportMenu />
+                </>
+              ) : (
+                <DiagramPanel />
+              )}
             </div>
           </div>
           
-          {/* Explore panel */}
-          <ExplorePanel />
+          {/* Explore panel (3D mode only) */}
+          {analysisMode === '3d' && <ExplorePanel />}
         </div>
       </div>
     </main>

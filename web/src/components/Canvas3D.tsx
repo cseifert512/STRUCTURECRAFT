@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment, ContactShadows, Line } from '@react-three/drei'
 import * as THREE from 'three'
-import { useDesignStore } from '@/store/designStore'
+import { useDesignStore, ColorMode } from '@/store/designStore'
 import { NodeData, BarData } from '@/lib/types'
 
 // Color palette - architectural/engineering style
@@ -15,25 +15,24 @@ const COLORS = {
   support: new THREE.Color('#212529'),      // Dark for supports
   node: new THREE.Color('#495057'),         // Dark gray for nodes
   ground: new THREE.Color('#F8F9FA'),       // Light gray ground
+  deflected: new THREE.Color('#E74C3C'),    // Coral red for deflected shape
   // Utilization colors
   utilSafe: new THREE.Color('#2D6A4F'),     // Green for safe (<70%)
   utilWarning: new THREE.Color('#E9C46A'),  // Yellow for warning (70-100%)
   utilFail: new THREE.Color('#D62828'),     // Red for failing (>100%)
 }
 
-// Color mode options
-type ColorMode = 'none' | 'force' | 'utilization'
-
 interface StructureProps {
   nodes: NodeData[]
   bars: BarData[]
   supportNodes: number[]
-  colorByForce: boolean  // Legacy prop, maps to colorMode
+  colorMode: ColorMode
+  showDeflected: boolean
+  deflectionScale: number
+  maxDisplacement: number
 }
 
-function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) {
-  // Determine color mode: force coloring (tension/compression)
-  const colorMode: ColorMode = colorByForce ? 'force' : 'none'
+function Structure({ nodes, bars, supportNodes, colorMode, showDeflected, deflectionScale, maxDisplacement }: StructureProps) {
   // Create node lookup map
   const nodeMap = useMemo(() => {
     const map = new Map<number, NodeData>()
@@ -104,10 +103,37 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
   const toThreeCoords = (x: number, y: number, z: number): [number, number, number] => {
     return [x - center.x, z, y - center.y]
   }
+
+  // Calculate simulated deflected position (using force to estimate deflection direction)
+  // In a real implementation, actual displacement data would come from the solver
+  const getDeflectedCoords = (node: NodeData, bar?: BarData): [number, number, number] => {
+    if (!showDeflected || maxDisplacement === 0) {
+      return toThreeCoords(node.x, node.y, node.z)
+    }
+    
+    // For visualization purposes, simulate deflection based on gravity (z direction)
+    // Nodes at the top (high z) will appear to move down more
+    // This is a rough approximation - real implementation would use solver output
+    const isSupport = supportNodes.includes(node.id)
+    if (isSupport) {
+      return toThreeCoords(node.x, node.y, node.z)
+    }
+    
+    // Calculate node height relative to supports
+    const maxZ = Math.max(...nodes.map(n => n.z))
+    const minZ = Math.min(...nodes.filter(n => supportNodes.includes(n.id)).map(n => n.z))
+    const heightRatio = (node.z - minZ) / (maxZ - minZ || 1)
+    
+    // Apply deflection primarily in Z (gravity direction)
+    const scaledDeflection = maxDisplacement * deflectionScale
+    const dz = -heightRatio * scaledDeflection * 0.5  // Downward deflection
+    
+    return toThreeCoords(node.x, node.y, node.z + dz)
+  }
   
   return (
     <group>
-      {/* Render bars as lines */}
+      {/* Render bars as lines - original structure */}
       {bars.map((bar) => {
         const startNode = nodeMap.get(bar.ni)
         const endNode = nodeMap.get(bar.nj)
@@ -124,8 +150,32 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
               toThreeCoords(startNode.x, startNode.y, startNode.z),
               toThreeCoords(endNode.x, endNode.y, endNode.z),
             ]}
-            color={color}
-            lineWidth={lineWidth}
+            color={showDeflected && maxDisplacement > 0 ? COLORS.neutral : color}
+            lineWidth={showDeflected && maxDisplacement > 0 ? 1 : lineWidth}
+            opacity={showDeflected && maxDisplacement > 0 ? 0.3 : 1}
+            transparent={showDeflected && maxDisplacement > 0}
+          />
+        )
+      })}
+      
+      {/* Render deflected shape if enabled */}
+      {showDeflected && maxDisplacement > 0 && bars.map((bar) => {
+        const startNode = nodeMap.get(bar.ni)
+        const endNode = nodeMap.get(bar.nj)
+        if (!startNode || !endNode) return null
+        
+        return (
+          <Line
+            key={`deflected-${bar.id}`}
+            points={[
+              getDeflectedCoords(startNode, bar),
+              getDeflectedCoords(endNode, bar),
+            ]}
+            color={COLORS.deflected}
+            lineWidth={2}
+            dashed
+            dashSize={0.1}
+            gapSize={0.05}
           />
         )
       })}
@@ -147,12 +197,39 @@ function Structure({ nodes, bars, supportNodes, colorByForce }: StructureProps) 
           </mesh>
         )
       })}
+      
+      {/* Render deflected nodes if enabled */}
+      {showDeflected && maxDisplacement > 0 && nodes.map((node) => {
+        const isSupport = supportNodes.includes(node.id)
+        if (isSupport) return null  // Supports don't move
+        
+        return (
+          <mesh key={`deflected-node-${node.id}`} position={getDeflectedCoords(node)}>
+            <sphereGeometry args={[0.03, 12, 12]} />
+            <meshStandardMaterial
+              color={COLORS.deflected}
+              roughness={0.6}
+              metalness={0.3}
+            />
+          </mesh>
+        )
+      })}
     </group>
   )
 }
 
 function Scene() {
-  const { nodes, bars, supportNodes, colorByForce, isLoading, error } = useDesignStore()
+  const { 
+    nodes, 
+    bars, 
+    supportNodes, 
+    colorMode, 
+    isLoading, 
+    error,
+    showDeflectedShape,
+    deflectionScale3D,
+    metrics,
+  } = useDesignStore()
   
   // Calculate camera distance based on structure size
   const cameraDistance = useMemo(() => {
@@ -165,6 +242,9 @@ function Scene() {
     )
     return Math.max(maxDim * 1.5, 10)
   }, [nodes])
+
+  // Get max displacement for deflected shape visualization
+  const maxDisplacement = metrics?.max_displacement ?? 0
   
   return (
     <>
@@ -209,7 +289,10 @@ function Scene() {
           nodes={nodes}
           bars={bars}
           supportNodes={supportNodes}
-          colorByForce={colorByForce}
+          colorMode={colorMode}
+          showDeflected={showDeflectedShape}
+          deflectionScale={deflectionScale3D}
+          maxDisplacement={maxDisplacement}
         />
       )}
       
@@ -228,7 +311,7 @@ function Scene() {
 }
 
 export function Canvas3D() {
-  const { isLoading, error, nodes } = useDesignStore()
+  const { isLoading, error, nodes, showDeflectedShape, deflectionScale3D, metrics } = useDesignStore()
   
   return (
     <div className="relative w-full h-full min-h-[400px] overflow-hidden bg-slate-100">
@@ -250,6 +333,25 @@ export function Canvas3D() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <span className="text-xs text-amber-800">Unstable - geometry only (no forces)</span>
+          </div>
+        </div>
+      )}
+
+      {/* Deflected shape legend - bottom left */}
+      {showDeflectedShape && nodes.length > 0 && metrics?.max_displacement && metrics.max_displacement > 0 && (
+        <div className="absolute bottom-3 left-3 z-10 bg-white/90 rounded px-3 py-2 text-xs">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-[#6C757D]" />
+              <span className="text-slate-500">Original</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-0.5 bg-[#E74C3C]" style={{ borderStyle: 'dashed', borderWidth: '1px', borderColor: '#E74C3C' }} />
+              <span className="text-slate-500">Deflected (×{deflectionScale3D})</span>
+            </div>
+          </div>
+          <div className="mt-1 text-[10px] text-slate-400">
+            Max δ = {(metrics.max_displacement * 1000).toFixed(2)} mm
           </div>
         </div>
       )}
@@ -301,4 +403,3 @@ export function Canvas3D() {
     </div>
   )
 }
-

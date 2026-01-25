@@ -28,6 +28,25 @@ from mini_branch.kernel.modal import build_lumped_mass_matrix, natural_frequenci
 from mini_branch.kernel.connections import ConnectionType, CONNECTION_STIFFNESS
 from mini_branch.checks.timber import DOUGLAS_FIR_CAPACITY, axial_utilization
 from mini_branch.checks.steel import STEEL_SECTIONS, check_steel_member
+# 2D Frame imports
+from mini_branch.model import Node, Frame2D
+from mini_branch.assembly import assemble_global_K as assemble_2d_K, DOF_PER_NODE, dof_index
+from mini_branch.loads import assemble_element_loads_global
+from mini_branch.explore import PortalParams, make_portal
+from mini_branch.catalog import Material, Section, DEFAULT_MATERIAL, TIMBER_SECTIONS
+from mini_branch.diagrams import (
+    DiagramPoint as DiagramPointData,
+    DeflectedPoint as DeflectedPointData,
+    ElementDiagramData as ElementDiagramDataClass,
+    compute_frame_diagrams,
+    get_frame_summary,
+)
+from mini_branch.post import (
+    element_end_forces_local,
+    compute_nodal_displacements,
+    compute_drift,
+    compute_reactions,
+)
 import numpy as np
 import pandas as pd
 
@@ -225,6 +244,137 @@ class ExploreResult(BaseModel):
     n_successful: int = 0
     n_pareto: int = 0
     designs: List[ExploreDesignData] = []
+
+
+# =============================================================================
+# 2D Frame Models
+# =============================================================================
+
+class Frame2DParams(BaseModel):
+    """Input parameters for 2D portal frame generation."""
+    span: float = Field(6.0, ge=2.0, le=20.0, description="Horizontal span (m)")
+    height: float = Field(3.0, ge=2.0, le=10.0, description="Column height (m)")
+    brace: int = Field(0, ge=0, le=1, description="Bracing: 0=none, 1=X-brace")
+    # Section indices (from timber sections catalog)
+    sec_col: int = Field(5, ge=0, le=10, description="Column section index")
+    sec_beam: int = Field(5, ge=0, le=10, description="Beam section index")
+    sec_brace: int = Field(3, ge=0, le=10, description="Brace section index")
+    # Loads
+    udl_kn_m: float = Field(2.0, ge=0.5, le=20.0, description="UDL on beam (kN/m)")
+    lateral_kn: float = Field(5.0, ge=0.0, le=50.0, description="Lateral load at top (kN)")
+    # Visualization
+    deflection_scale: float = Field(50.0, ge=1.0, le=500.0, description="Deflection scale factor")
+    n_diagram_points: int = Field(21, ge=11, le=51, description="Points per element for diagrams")
+
+
+class Frame2DNodeData(BaseModel):
+    """2D frame node data."""
+    id: int
+    x: float
+    y: float
+    ux: float = 0.0       # Displacement in X
+    uy: float = 0.0       # Displacement in Y
+    rz: float = 0.0       # Rotation about Z
+    is_support: bool = False
+
+
+class Frame2DElementData(BaseModel):
+    """2D frame element data."""
+    id: int
+    ni: int
+    nj: int
+    element_type: str     # "column", "beam", "brace"
+    length: float
+    # Section info
+    section_name: str
+    A: float              # Area (m²)
+    I: float              # Moment of inertia (m⁴)
+    # End forces (local coordinates)
+    N_i: float = 0.0      # Axial at node i
+    N_j: float = 0.0      # Axial at node j
+    V_i: float = 0.0      # Shear at node i
+    V_j: float = 0.0      # Shear at node j
+    M_i: float = 0.0      # Moment at node i
+    M_j: float = 0.0      # Moment at node j
+
+
+class DiagramPoint(BaseModel):
+    """Single point on a force diagram."""
+    x_local: float
+    x_global: float
+    y_global: float
+    N: float
+    V: float
+    M: float
+
+
+class DeflectedPoint(BaseModel):
+    """Point on deflected shape curve."""
+    x: float
+    y: float
+
+
+class ElementDiagramData(BaseModel):
+    """Complete diagram data for one element."""
+    element_id: int
+    element_type: str
+    ni: int
+    nj: int
+    length: float
+    points: List[DiagramPoint]
+    deflected_shape: List[DeflectedPoint]
+    N_i: float
+    N_j: float
+    V_i: float
+    V_j: float
+    M_i: float
+    M_j: float
+    max_N: float
+    max_V: float
+    max_M: float
+
+
+class ReactionData(BaseModel):
+    """Reaction forces at a support."""
+    node_id: int
+    Rx: float
+    Ry: float
+    Mz: float = 0.0
+
+
+class Frame2DMetrics(BaseModel):
+    """Metrics for 2D frame analysis."""
+    n_nodes: int
+    n_elements: int
+    n_supports: int
+    # Displacement
+    max_displacement_mm: float
+    drift_mm: float
+    drift_ratio: float
+    drift_passes: bool
+    # Forces
+    max_axial_force: float
+    max_shear_force: float
+    max_moment: float
+    critical_element_N: Optional[int] = None
+    critical_element_V: Optional[int] = None
+    critical_element_M: Optional[int] = None
+
+
+class Frame2DResult(BaseModel):
+    """Complete 2D frame analysis result."""
+    success: bool
+    error: Optional[str] = None
+    # Geometry
+    nodes: Optional[List[Frame2DNodeData]] = None
+    elements: Optional[List[Frame2DElementData]] = None
+    # Results
+    reactions: Optional[List[ReactionData]] = None
+    metrics: Optional[Frame2DMetrics] = None
+    # Diagram data
+    diagrams: Optional[List[ElementDiagramData]] = None
+    # Parameters used
+    params: Optional[Dict[str, Any]] = None
 
 
 # =============================================================================
@@ -1134,6 +1284,251 @@ async def explore_designs(params: ExploreParams):
             success=False,
             error=str(e),
         )
+
+
+# =============================================================================
+# 2D Frame Endpoints
+# =============================================================================
+
+def generate_and_solve_frame2d(params: Frame2DParams) -> Frame2DResult:
+    """Generate and solve a 2D portal frame with full diagram data."""
+    
+    print(f"\n{'='*60}")
+    print(f"[DEBUG] FRAME2D GENERATE REQUEST")
+    print(f"[DEBUG] span: {params.span}, height: {params.height}")
+    print(f"[DEBUG] brace: {params.brace}")
+    print(f"[DEBUG] udl: {params.udl_kn_m} kN/m, lateral: {params.lateral_kn} kN")
+    print(f"{'='*60}")
+    
+    try:
+        # Use timber material and sections
+        material = DEFAULT_MATERIAL  # Using timber (Douglas Fir, E = 12 GPa)
+        sections = TIMBER_SECTIONS
+        
+        # Ensure section indices are valid
+        n_sec = len(sections)
+        sec_col = min(params.sec_col, n_sec - 1)
+        sec_beam = min(params.sec_beam, n_sec - 1)
+        sec_brace = min(params.sec_brace, n_sec - 1)
+        
+        # Create portal params
+        portal_params = PortalParams(
+            span=params.span,
+            height=params.height,
+            brace=params.brace,
+            sec_col=sec_col,
+            sec_beam=sec_beam,
+            sec_brace=sec_brace,
+            udl_w=-params.udl_kn_m * 1000,  # Convert kN/m to N/m, negative for down
+            wind_P=params.lateral_kn * 1000,  # Convert kN to N
+        )
+        
+        # Generate frame geometry
+        nodes, elements, fixed_dofs, element_udls, nodal_loads = make_portal(
+            portal_params, material, sections
+        )
+        
+        n_nodes = len(nodes)
+        n_elements = len(elements)
+        
+        print(f"[DEBUG] Generated: {n_nodes} nodes, {n_elements} elements")
+        
+    except Exception as e:
+        print(f"[ERROR] Frame generation failed: {str(e)}")
+        return Frame2DResult(success=False, error=f"Generation failed: {str(e)}")
+    
+    # Assemble and solve
+    try:
+        # Assemble stiffness matrix
+        K = assemble_2d_K(nodes, elements)
+        ndof = DOF_PER_NODE * n_nodes
+        
+        # Assemble load vector
+        F = np.zeros(ndof)
+        F += assemble_element_loads_global(nodes, elements, element_udls)
+        
+        # Add nodal loads
+        for node_id, load in nodal_loads.items():
+            F[dof_index(node_id, 0)] += load[0]  # Fx
+            F[dof_index(node_id, 1)] += load[1]  # Fy
+            F[dof_index(node_id, 2)] += load[2]  # Mz
+        
+        print(f"[DEBUG] Assembled K: {K.shape}, F sum: {np.sum(np.abs(F)):.2f}")
+        
+        # Solve
+        from mini_branch.solve import solve_linear as solve_2d
+        d, R, _ = solve_2d(K, F, fixed_dofs)
+        
+        print(f"[DEBUG] Solve successful! Max displacement: {np.max(np.abs(d)):.6f} m")
+        
+    except MechanismError as e:
+        print(f"[ERROR] MechanismError: {str(e)}")
+        return Frame2DResult(success=False, error=f"Structure unstable: {str(e)}")
+    except Exception as e:
+        print(f"[ERROR] Solve failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Frame2DResult(success=False, error=f"Solve failed: {str(e)}")
+    
+    # Compute diagrams
+    try:
+        diagram_data = compute_frame_diagrams(
+            nodes, elements, d, element_udls,
+            scale=params.deflection_scale,
+            n_points=params.n_diagram_points
+        )
+        summary = get_frame_summary(diagram_data)
+        
+        print(f"[DEBUG] Computed diagrams for {len(diagram_data)} elements")
+        
+    except Exception as e:
+        print(f"[WARNING] Diagram computation failed: {str(e)}")
+        diagram_data = []
+        summary = {}
+    
+    # Build node data
+    displacements = compute_nodal_displacements(nodes, d)
+    support_node_ids = set(dof // DOF_PER_NODE for dof in fixed_dofs)
+    
+    nodes_list = []
+    for node_id, node in nodes.items():
+        disp = displacements.get(node_id, {'ux': 0, 'uy': 0, 'rz': 0})
+        nodes_list.append(Frame2DNodeData(
+            id=node_id,
+            x=round(node.x, 4),
+            y=round(node.y, 4),
+            ux=round(disp['ux'], 8),
+            uy=round(disp['uy'], 8),
+            rz=round(disp['rz'], 8),
+            is_support=node_id in support_node_ids,
+        ))
+    
+    # Build element data
+    elements_list = []
+    for elem in elements:
+        # Determine element type
+        dx = nodes[elem.nj].x - nodes[elem.ni].x
+        dy = nodes[elem.nj].y - nodes[elem.ni].y
+        L = float(np.hypot(dx, dy))
+        c = dx / L if L > 0 else 1.0
+        
+        if abs(c) < 0.1:
+            elem_type = "column"
+        elif abs(c) > 0.9:
+            elem_type = "beam"
+        else:
+            elem_type = "brace"
+        
+        # Get end forces
+        udl_w = element_udls.get(elem.id, None)
+        f_local = element_end_forces_local(nodes, elem, d, udl_w)
+        
+        # Find section name
+        sec_name = "Unknown"
+        for sec in sections:
+            if abs(sec.A - elem.A) < 1e-6 and abs(sec.I - elem.I) < 1e-10:
+                sec_name = sec.name
+                break
+        
+        elements_list.append(Frame2DElementData(
+            id=elem.id,
+            ni=elem.ni,
+            nj=elem.nj,
+            element_type=elem_type,
+            length=round(L, 4),
+            section_name=sec_name,
+            A=elem.A,
+            I=elem.I,
+            N_i=round(float(f_local[0]), 2),
+            N_j=round(float(f_local[3]), 2),
+            V_i=round(float(f_local[1]), 2),
+            V_j=round(float(f_local[4]), 2),
+            M_i=round(float(f_local[2]), 2),
+            M_j=round(float(f_local[5]), 2),
+        ))
+    
+    # Build reaction data
+    reactions_dict = compute_reactions(R, fixed_dofs, nodes)
+    reactions_list = [
+        ReactionData(
+            node_id=nid,
+            Rx=round(r['Rx'], 2),
+            Ry=round(r['Ry'], 2),
+            Mz=round(r['Mz'], 2),
+        )
+        for nid, r in reactions_dict.items()
+    ]
+    
+    # Build diagram data for response
+    diagrams_list = []
+    for diag in diagram_data:
+        diagrams_list.append(ElementDiagramData(
+            element_id=diag.element_id,
+            element_type=diag.element_type,
+            ni=diag.ni,
+            nj=diag.nj,
+            length=diag.length,
+            points=[DiagramPoint(
+                x_local=p.x_local,
+                x_global=p.x_global,
+                y_global=p.y_global,
+                N=p.N,
+                V=p.V,
+                M=p.M,
+            ) for p in diag.points],
+            deflected_shape=[DeflectedPoint(x=p.x, y=p.y) for p in diag.deflected_shape],
+            N_i=diag.N_i,
+            N_j=diag.N_j,
+            V_i=diag.V_i,
+            V_j=diag.V_j,
+            M_i=diag.M_i,
+            M_j=diag.M_j,
+            max_N=diag.max_N,
+            max_V=diag.max_V,
+            max_M=diag.max_M,
+        ))
+    
+    # Compute metrics
+    drift = compute_drift(nodes, d, params.height)
+    max_disp = max(disp['magnitude'] for disp in displacements.values())
+    
+    metrics = Frame2DMetrics(
+        n_nodes=n_nodes,
+        n_elements=n_elements,
+        n_supports=len(support_node_ids),
+        max_displacement_mm=round(max_disp * 1000, 2),
+        drift_mm=round(drift['max_drift_mm'], 2),
+        drift_ratio=round(drift['drift_ratio'], 6),
+        drift_passes=drift['drift_passes'],
+        max_axial_force=round(summary.get('max_axial_force', 0), 2),
+        max_shear_force=round(summary.get('max_shear_force', 0), 2),
+        max_moment=round(summary.get('max_moment', 0), 2),
+        critical_element_N=summary.get('critical_element_N'),
+        critical_element_V=summary.get('critical_element_V'),
+        critical_element_M=summary.get('critical_element_M'),
+    )
+    
+    return Frame2DResult(
+        success=True,
+        nodes=nodes_list,
+        elements=elements_list,
+        reactions=reactions_list,
+        metrics=metrics,
+        diagrams=diagrams_list,
+        params=params.model_dump(),
+    )
+
+
+@app.post("/api/frame2d/generate", response_model=Frame2DResult)
+async def generate_frame2d(params: Frame2DParams):
+    """Generate and solve a 2D portal frame with force diagrams."""
+    return generate_and_solve_frame2d(params)
+
+
+@app.post("/api/frame2d/diagrams", response_model=Frame2DResult)
+async def get_frame2d_diagrams(params: Frame2DParams):
+    """Get force diagram data for a 2D portal frame (alias for generate)."""
+    return generate_and_solve_frame2d(params)
 
 
 if __name__ == "__main__":

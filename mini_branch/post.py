@@ -1,10 +1,23 @@
 # element end forces, diagrams, utilization, drift
 
 import numpy as np
+from typing import Dict, List, Tuple, Optional
 from .model import Node, Frame2D
 from .elements import element_geometry, frame2d_local_stiffness, frame2d_transform
 from .assembly import dof_index, DOF_PER_NODE
 from .loads import frame2d_equiv_nodal_load_udl
+
+# Re-export diagram functions for convenience
+from .diagrams import (
+    DiagramPoint,
+    DeflectedPoint,
+    ElementDiagramData,
+    hermite_shape_functions,
+    compute_element_internal_forces,
+    compute_curved_deflection,
+    compute_frame_diagrams,
+    get_frame_summary,
+)
 
 
 def element_end_forces_local(
@@ -83,3 +96,128 @@ def element_end_forces_local(
         f_local = f_local - f_udl_local
     
     return f_local
+
+
+def compute_nodal_displacements(
+    nodes: Dict[int, Node],
+    d_global: np.ndarray,
+) -> Dict[int, Dict[str, float]]:
+    """
+    Extract nodal displacements from global displacement vector.
+    
+    Parameters:
+    -----------
+    nodes : Dict[int, Node]
+        Node dictionary
+    d_global : np.ndarray
+        Global displacement vector from solver
+    
+    Returns:
+    --------
+    Dict[int, Dict[str, float]]
+        Mapping of node_id to {'ux', 'uy', 'rz', 'magnitude'}
+    """
+    result = {}
+    for node_id in nodes:
+        ux = d_global[dof_index(node_id, 0)]
+        uy = d_global[dof_index(node_id, 1)]
+        rz = d_global[dof_index(node_id, 2)]
+        mag = float(np.sqrt(ux**2 + uy**2))
+        result[node_id] = {
+            'ux': float(ux),
+            'uy': float(uy),
+            'rz': float(rz),
+            'magnitude': mag,
+        }
+    return result
+
+
+def compute_drift(
+    nodes: Dict[int, Node],
+    d_global: np.ndarray,
+    height: float,
+) -> Dict[str, float]:
+    """
+    Compute lateral drift (horizontal displacement at top of frame).
+    
+    Parameters:
+    -----------
+    nodes : Dict[int, Node]
+        Node dictionary
+    d_global : np.ndarray  
+        Global displacement vector from solver
+    height : float
+        Frame height for drift ratio calculation
+    
+    Returns:
+    --------
+    Dict with drift metrics:
+        - max_drift: Maximum horizontal displacement (m)
+        - max_drift_mm: Maximum horizontal displacement (mm)
+        - drift_ratio: max_drift / height
+        - drift_limit_H400: Allowable drift at H/400
+        - drift_passes: Whether drift is within H/400 limit
+    """
+    # Find top nodes (maximum y coordinate)
+    max_y = max(n.y for n in nodes.values())
+    top_nodes = [nid for nid, n in nodes.items() if abs(n.y - max_y) < 1e-6]
+    
+    # Get maximum horizontal displacement at top
+    max_drift = 0.0
+    for nid in top_nodes:
+        ux = abs(d_global[dof_index(nid, 0)])
+        if ux > max_drift:
+            max_drift = ux
+    
+    drift_limit = height / 400  # Common code limit
+    
+    return {
+        'max_drift': max_drift,
+        'max_drift_mm': max_drift * 1000,
+        'drift_ratio': max_drift / height if height > 0 else 0,
+        'drift_limit_H400': drift_limit,
+        'drift_limit_H400_mm': drift_limit * 1000,
+        'drift_passes': max_drift <= drift_limit,
+    }
+
+
+def compute_reactions(
+    R: np.ndarray,
+    fixed_dofs: List[int],
+    nodes: Dict[int, Node],
+) -> Dict[int, Dict[str, float]]:
+    """
+    Extract reaction forces at support nodes.
+    
+    Parameters:
+    -----------
+    R : np.ndarray
+        Reaction vector from solver
+    fixed_dofs : List[int]
+        List of fixed DOF indices
+    nodes : Dict[int, Node]
+        Node dictionary
+    
+    Returns:
+    --------
+    Dict[int, Dict[str, float]]
+        Mapping of node_id to {'Rx', 'Ry', 'Mz'} reaction components
+    """
+    # Find which nodes have fixed DOFs
+    support_nodes = set()
+    for dof in fixed_dofs:
+        node_id = dof // DOF_PER_NODE
+        support_nodes.add(node_id)
+    
+    result = {}
+    for node_id in support_nodes:
+        Rx = R[dof_index(node_id, 0)] if dof_index(node_id, 0) in fixed_dofs else 0.0
+        Ry = R[dof_index(node_id, 1)] if dof_index(node_id, 1) in fixed_dofs else 0.0
+        Mz = R[dof_index(node_id, 2)] if dof_index(node_id, 2) in fixed_dofs else 0.0
+        result[node_id] = {
+            'Rx': float(Rx),
+            'Ry': float(Ry),
+            'Mz': float(Mz),
+        }
+    
+    return result

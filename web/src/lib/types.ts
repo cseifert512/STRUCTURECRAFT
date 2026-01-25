@@ -246,3 +246,141 @@ export const DEFAULT_EXPLORE_SETTINGS = {
   variation_pct: 0.3,
 }
 
+// =============================================================================
+// 2D Frame Types
+// =============================================================================
+
+export interface Frame2DParams {
+  span: number
+  height: number
+  brace: 0 | 1
+  sec_col: number
+  sec_beam: number
+  sec_brace: number
+  udl_kn_m: number
+  lateral_kn: number
+  deflection_scale: number
+  n_diagram_points: number
+}
+
+export const DEFAULT_FRAME2D_PARAMS: Frame2DParams = {
+  span: 6.0,
+  height: 3.0,
+  brace: 0,
+  sec_col: 5,
+  sec_beam: 5,
+  sec_brace: 3,
+  udl_kn_m: 2.0,
+  lateral_kn: 5.0,
+  deflection_scale: 50.0,
+  n_diagram_points: 21,
+}
+
+export const FRAME2D_PARAM_LIMITS = {
+  span: { min: 2, max: 20, step: 0.5 },
+  height: { min: 2, max: 10, step: 0.5 },
+  udl_kn_m: { min: 0.5, max: 20, step: 0.5 },
+  lateral_kn: { min: 0, max: 50, step: 1 },
+  deflection_scale: { min: 1, max: 500, step: 10 },
+}
+
+export interface Frame2DNodeData {
+  id: number
+  x: number
+  y: number
+  ux: number
+  uy: number
+  rz: number
+  is_support: boolean
+}
+
+export interface Frame2DElementData {
+  id: number
+  ni: number
+  nj: number
+  element_type: 'column' | 'beam' | 'brace'
+  length: number
+  section_name: string
+  A: number
+  I: number
+  N_i: number
+  N_j: number
+  V_i: number
+  V_j: number
+  M_i: number
+  M_j: number
+}
+
+export interface DiagramPoint {
+  x_local: number
+  x_global: number
+  y_global: number
+  N: number
+  V: number
+  M: number
+}
+
+export interface DeflectedPoint {
+  x: number
+  y: number
+}
+
+export interface ElementDiagramData {
+  element_id: number
+  element_type: string
+  ni: number
+  nj: number
+  length: number
+  points: DiagramPoint[]
+  deflected_shape: DeflectedPoint[]
+  N_i: number
+  N_j: number
+  V_i: number
+  V_j: number
+  M_i: number
+  M_j: number
+  max_N: number
+  max_V: number
+  max_M: number
+}
+
+export interface ReactionData {
+  node_id: number
+  Rx: number
+  Ry: number
+  Mz: number
+}
+
+export interface Frame2DMetrics {
+  n_nodes: number
+  n_elements: number
+  n_supports: number
+  max_displacement_mm: number
+  drift_mm: number
+  drift_ratio: number
+  drift_passes: boolean
+  max_axial_force: number
+  max_shear_force: number
+  max_moment: number
+  critical_element_N?: number
+  critical_element_V?: number
+  critical_element_M?: number
+}
+
+export interface Frame2DResult {
+  success: boolean
+  error?: string
+  nodes?: Frame2DNodeData[]
+  elements?: Frame2DElementData[]
+  reactions?: ReactionData[]
+  metrics?: Frame2DMetrics
+  diagrams?: ElementDiagramData[]
+  params?: Frame2DParams
+}
+
+// Diagram type for visualization
+export type DiagramType = 'none' | 'N' | 'V' | 'M'
+
+// Analysis mode
+export type AnalysisMode = '3d' | '2d'
+
