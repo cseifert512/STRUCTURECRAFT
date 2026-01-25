@@ -128,3 +128,5 @@ class Truss3D:
     A: float  # Cross-sectional area (m²)
 
 
+
+

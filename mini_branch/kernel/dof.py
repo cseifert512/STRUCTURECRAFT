@@ -164,3 +164,5 @@ DOF_3D_TRUSS = DOFManager(dof_per_node=3)   # ux, uy, uz
 DOF_3D_FRAME = DOFManager(dof_per_node=6)   # ux, uy, uz, rx, ry, rz
 
 
+
+

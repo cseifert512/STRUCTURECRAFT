@@ -71,3 +71,5 @@ def render_metrics_compact(metrics: Dict[str, Any]) -> None:
         st.metric("Bars", metrics.get('n_bars', 0))
 
 
+
+
