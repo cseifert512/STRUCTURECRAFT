@@ -384,3 +384,55 @@ export type DiagramType = 'none' | 'N' | 'V' | 'M'
 // Analysis mode
 export type AnalysisMode = '3d' | '2d'
 
+// =============================================================================
+// Section Extraction Types
+// =============================================================================
+
+export type SliceAxis = 'x' | 'y'
+
+export interface SectionExtractParams {
+  // 3D design params
+  width: number
+  depth: number
+  nx: number
+  ny: number
+  min_height: number
+  max_height: number
+  heightfield: string
+  topology: string
+  support_layout: string
+  A_cm2: number
+  gravity_kn: number
+  // Section settings
+  slice_axis: SliceAxis
+  slice_position: number  // 0.0 to 1.0
+  // Load override (optional)
+  udl_override_kn_m?: number
+  deflection_scale: number
+  n_diagram_points: number
+}
+
+export interface SectionExtractResult {
+  success: boolean
+  error?: string
+  // Section info
+  slice_axis?: string
+  slice_value?: number
+  tributary_width?: number
+  calculated_udl_kn_m?: number
+  applied_udl_kn_m?: number
+  section_span?: number
+  n_nodes_extracted?: number
+  n_elements_extracted?: number
+  // 2D frame result
+  frame_result?: Frame2DResult
+}
+
+export const DEFAULT_SECTION_PARAMS = {
+  slice_axis: 'y' as SliceAxis,
+  slice_position: 0.5,
+  udl_override_kn_m: undefined as number | undefined,
+  deflection_scale: 50.0,
+  n_diagram_points: 21,
+}
+

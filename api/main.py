@@ -47,6 +47,14 @@ from mini_branch.post import (
     compute_drift,
     compute_reactions,
 )
+# Section extraction imports
+from mini_branch.section import (
+    extract_section,
+    find_slice_coordinate,
+    calculate_tributary_udl,
+    get_section_span,
+    SectionExtractionResult,
+)
 import numpy as np
 import pandas as pd
 
@@ -375,6 +383,50 @@ class Frame2DResult(BaseModel):
     diagrams: Optional[List[ElementDiagramData]] = None
     # Parameters used
     params: Optional[Dict[str, Any]] = None
+
+
+# =============================================================================
+# Section Extraction Models
+# =============================================================================
+
+class SectionExtractParams(BaseModel):
+    """Parameters for extracting a 2D section from 3D spaceframe."""
+    # 3D design params (to regenerate structure)
+    width: float = Field(10.0, ge=4.0, le=20.0)
+    depth: float = Field(8.0, ge=4.0, le=16.0)
+    nx: int = Field(5, ge=2, le=10)
+    ny: int = Field(4, ge=2, le=10)
+    min_height: float = Field(2.5, ge=1.5, le=6.0)
+    max_height: float = Field(4.0, ge=1.5, le=6.0)
+    heightfield: str = Field("paraboloid")
+    topology: str = Field("grid")
+    support_layout: str = Field("edges")
+    A_cm2: float = Field(8.0, ge=3.0, le=20.0)
+    gravity_kn: float = Field(50.0, ge=20.0, le=150.0)
+    # Section settings
+    slice_axis: str = Field("y", description="Axis to slice: 'x' or 'y'")
+    slice_position: float = Field(0.5, ge=0.0, le=1.0, description="Normalized position (0-1)")
+    # Load override (optional)
+    udl_override_kn_m: Optional[float] = Field(None, ge=0.0, le=50.0)
+    deflection_scale: float = Field(50.0, ge=1.0, le=500.0)
+    n_diagram_points: int = Field(21, ge=11, le=51)
+
+
+class SectionExtractResult(BaseModel):
+    """Result of section extraction with 2D analysis."""
+    success: bool
+    error: Optional[str] = None
+    # Section info
+    slice_axis: Optional[str] = None
+    slice_value: Optional[float] = None
+    tributary_width: Optional[float] = None
+    calculated_udl_kn_m: Optional[float] = None
+    applied_udl_kn_m: Optional[float] = None
+    section_span: Optional[float] = None
+    n_nodes_extracted: Optional[int] = None
+    n_elements_extracted: Optional[int] = None
+    # 2D frame result
+    frame_result: Optional[Frame2DResult] = None
 
 
 # =============================================================================
@@ -1529,6 +1581,317 @@ async def generate_frame2d(params: Frame2DParams):
 async def get_frame2d_diagrams(params: Frame2DParams):
     """Get force diagram data for a 2D portal frame (alias for generate)."""
     return generate_and_solve_frame2d(params)
+
+
+# =============================================================================
+# Section Extraction Endpoint
+# =============================================================================
+
+@app.post("/api/section/extract", response_model=SectionExtractResult)
+async def extract_section_from_3d(params: SectionExtractParams):
+    """
+    Extract a 2D frame section from a 3D spaceframe at a given slice position.
+    
+    This endpoint:
+    1. Generates the 3D spaceframe with given parameters
+    2. Slices at the specified X or Y coordinate
+    3. Extracts nodes and bars on that plane
+    4. Projects to 2D and solves with force diagrams
+    5. Returns complete 2D analysis with tributary loading
+    """
+    print(f"\n{'='*60}")
+    print(f"[DEBUG] SECTION EXTRACT REQUEST")
+    print(f"[DEBUG] slice_axis: {params.slice_axis}, position: {params.slice_position}")
+    print(f"[DEBUG] 3D params: {params.width}x{params.depth}, {params.nx}x{params.ny}")
+    print(f"{'='*60}")
+    
+    try:
+        # Step 1: Generate 3D structure
+        canopy_params = CanopyParams(
+            width=params.width,
+            depth=params.depth,
+            nx=params.nx,
+            ny=params.ny,
+            min_height=params.min_height,
+            max_height=params.max_height,
+            heightfield=params.heightfield,
+            topology=params.topology,
+            support_layout=params.support_layout,
+            E=12e9,  # Timber
+            A=params.A_cm2 * 1e-4,  # cm² to m²
+            gravity_load=params.gravity_kn * 1000,  # kN to N
+        )
+        
+        nodes_3d, bars_3d, support_nodes_3d = generate_canopy(canopy_params)
+        
+        print(f"[DEBUG] Generated 3D: {len(nodes_3d)} nodes, {len(bars_3d)} bars")
+        
+    except Exception as e:
+        print(f"[ERROR] 3D generation failed: {str(e)}")
+        return SectionExtractResult(success=False, error=f"3D generation failed: {str(e)}")
+    
+    try:
+        # Step 2: Find actual slice coordinate
+        slice_axis = params.slice_axis.lower()
+        if slice_axis not in ['x', 'y']:
+            slice_axis = 'y'
+        
+        slice_value = find_slice_coordinate(nodes_3d, slice_axis, params.slice_position)
+        
+        print(f"[DEBUG] Slicing at {slice_axis}={slice_value}")
+        
+        # Step 3: Extract 2D section
+        # Use timber properties
+        section = TIMBER_SECTIONS[5]  # Mid-range section
+        
+        extraction = extract_section(
+            nodes_3d=nodes_3d,
+            bars_3d=bars_3d,
+            support_nodes_3d=support_nodes_3d,
+            slice_axis=slice_axis,
+            slice_value=slice_value,
+            tolerance=0.1,  # 10cm tolerance
+            E=DEFAULT_MATERIAL.E,
+            A=section.A,
+            I=section.I,
+        )
+        
+        print(f"[DEBUG] Extracted: {extraction.n_nodes_found} nodes, {extraction.n_bars_found} bars")
+        print(f"[DEBUG] Tributary width: {extraction.tributary_width}m")
+        
+        if extraction.n_nodes_found < 2:
+            return SectionExtractResult(
+                success=False,
+                error=f"Not enough nodes found at {slice_axis}={slice_value:.2f}m (found {extraction.n_nodes_found})"
+            )
+        
+        if extraction.n_bars_found == 0:
+            return SectionExtractResult(
+                success=False,
+                error=f"No bars found connecting nodes at {slice_axis}={slice_value:.2f}m"
+            )
+        
+    except Exception as e:
+        print(f"[ERROR] Section extraction failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return SectionExtractResult(success=False, error=f"Section extraction failed: {str(e)}")
+    
+    try:
+        # Step 4: Calculate tributary UDL
+        footprint_area = params.width * params.depth
+        section_span = get_section_span(extraction.nodes_2d)
+        
+        calculated_udl = calculate_tributary_udl(
+            total_gravity_load=params.gravity_kn * 1000,  # kN to N
+            footprint_area=footprint_area,
+            tributary_width=extraction.tributary_width,
+            section_span=section_span,
+        )
+        
+        # Use override if provided, otherwise use calculated
+        if params.udl_override_kn_m is not None:
+            applied_udl = params.udl_override_kn_m * 1000  # kN/m to N/m
+        else:
+            applied_udl = calculated_udl
+        
+        print(f"[DEBUG] Calculated UDL: {calculated_udl/1000:.2f} kN/m")
+        print(f"[DEBUG] Applied UDL: {applied_udl/1000:.2f} kN/m")
+        
+    except Exception as e:
+        print(f"[ERROR] UDL calculation failed: {str(e)}")
+        return SectionExtractResult(success=False, error=f"UDL calculation failed: {str(e)}")
+    
+    try:
+        # Step 5: Solve 2D frame
+        nodes = extraction.nodes_2d
+        elements = extraction.elements_2d
+        fixed_dofs = extraction.fixed_dofs
+        
+        n_nodes = len(nodes)
+        n_elements = len(elements)
+        
+        # Build element UDL map - apply UDL to horizontal elements only
+        element_udls = {}
+        for elem in elements:
+            ni = nodes[elem.ni]
+            nj = nodes[elem.nj]
+            # Check if element is roughly horizontal (beam-like)
+            dy = abs(nj.y - ni.y)
+            dx = abs(nj.x - ni.x)
+            if dx > 0.1 and dy / dx < 0.3:  # Mostly horizontal
+                element_udls[elem.id] = -applied_udl  # Negative = downward
+        
+        # Assemble and solve
+        K = assemble_2d_K(nodes, elements)
+        ndof = DOF_PER_NODE * n_nodes
+        
+        F = np.zeros(ndof)
+        F += assemble_element_loads_global(nodes, elements, element_udls)
+        
+        from mini_branch.solve import solve_linear as solve_2d
+        d, R, _ = solve_2d(K, F, fixed_dofs)
+        
+        print(f"[DEBUG] Solve successful! Max displacement: {np.max(np.abs(d)):.6f} m")
+        
+    except MechanismError as e:
+        print(f"[ERROR] MechanismError: {str(e)}")
+        return SectionExtractResult(success=False, error=f"Structure unstable: {str(e)}")
+    except Exception as e:
+        print(f"[ERROR] Solve failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return SectionExtractResult(success=False, error=f"Solve failed: {str(e)}")
+    
+    try:
+        # Step 6: Compute diagrams
+        diagram_data = compute_frame_diagrams(
+            nodes, elements, d, element_udls,
+            scale=params.deflection_scale,
+            n_points=params.n_diagram_points
+        )
+        summary = get_frame_summary(diagram_data)
+        
+        print(f"[DEBUG] Computed diagrams for {len(diagram_data)} elements")
+        
+    except Exception as e:
+        print(f"[WARNING] Diagram computation failed: {str(e)}")
+        diagram_data = []
+        summary = {}
+    
+    # Build response
+    displacements = compute_nodal_displacements(nodes, d)
+    support_node_ids = set(dof // DOF_PER_NODE for dof in fixed_dofs)
+    
+    nodes_list = []
+    for node_id, node in nodes.items():
+        disp = displacements.get(node_id, {'ux': 0, 'uy': 0, 'rz': 0})
+        nodes_list.append(Frame2DNodeData(
+            id=node_id,
+            x=round(node.x, 4),
+            y=round(node.y, 4),
+            ux=round(disp['ux'], 8),
+            uy=round(disp['uy'], 8),
+            rz=round(disp['rz'], 8),
+            is_support=node_id in support_node_ids,
+        ))
+    
+    elements_list = []
+    for elem in elements:
+        dx = nodes[elem.nj].x - nodes[elem.ni].x
+        dy = nodes[elem.nj].y - nodes[elem.ni].y
+        L = float(np.hypot(dx, dy))
+        c = dx / L if L > 0 else 1.0
+        
+        if abs(c) < 0.3:
+            elem_type = "column"
+        elif abs(c) > 0.7:
+            elem_type = "beam"
+        else:
+            elem_type = "brace"
+        
+        udl_w = element_udls.get(elem.id, None)
+        f_local = element_end_forces_local(nodes, elem, d, udl_w)
+        
+        elements_list.append(Frame2DElementData(
+            id=elem.id,
+            ni=elem.ni,
+            nj=elem.nj,
+            element_type=elem_type,
+            length=round(L, 4),
+            section_name="Extracted",
+            A=elem.A,
+            I=elem.I,
+            N_i=round(float(f_local[0]), 2),
+            N_j=round(float(f_local[3]), 2),
+            V_i=round(float(f_local[1]), 2),
+            V_j=round(float(f_local[4]), 2),
+            M_i=round(float(f_local[2]), 2),
+            M_j=round(float(f_local[5]), 2),
+        ))
+    
+    reactions_dict = compute_reactions(R, fixed_dofs, nodes)
+    reactions_list = [
+        ReactionData(
+            node_id=nid,
+            Rx=round(r['Rx'], 2),
+            Ry=round(r['Ry'], 2),
+            Mz=round(r['Mz'], 2),
+        )
+        for nid, r in reactions_dict.items()
+    ]
+    
+    diagrams_list = []
+    for diag in diagram_data:
+        diagrams_list.append(ElementDiagramData(
+            element_id=diag.element_id,
+            element_type=diag.element_type,
+            ni=diag.ni,
+            nj=diag.nj,
+            length=diag.length,
+            points=[DiagramPoint(
+                x_local=p.x_local,
+                x_global=p.x_global,
+                y_global=p.y_global,
+                N=p.N,
+                V=p.V,
+                M=p.M,
+            ) for p in diag.points],
+            deflected_shape=[DeflectedPoint(x=p.x, y=p.y) for p in diag.deflected_shape],
+            N_i=diag.N_i,
+            N_j=diag.N_j,
+            V_i=diag.V_i,
+            V_j=diag.V_j,
+            M_i=diag.M_i,
+            M_j=diag.M_j,
+            max_N=diag.max_N,
+            max_V=diag.max_V,
+            max_M=diag.max_M,
+        ))
+    
+    # Compute metrics
+    max_height = max(n.y for n in nodes.values()) if nodes else 1.0
+    drift = compute_drift(nodes, d, max_height)
+    max_disp = max(disp['magnitude'] for disp in displacements.values()) if displacements else 0
+    
+    metrics = Frame2DMetrics(
+        n_nodes=n_nodes,
+        n_elements=n_elements,
+        n_supports=len(support_node_ids),
+        max_displacement_mm=round(max_disp * 1000, 2),
+        drift_mm=round(drift['max_drift_mm'], 2),
+        drift_ratio=round(drift['drift_ratio'], 6) if drift['drift_ratio'] else 0,
+        drift_passes=drift['drift_passes'],
+        max_axial_force=round(summary.get('max_axial_force', 0), 2),
+        max_shear_force=round(summary.get('max_shear_force', 0), 2),
+        max_moment=round(summary.get('max_moment', 0), 2),
+        critical_element_N=summary.get('critical_element_N'),
+        critical_element_V=summary.get('critical_element_V'),
+        critical_element_M=summary.get('critical_element_M'),
+    )
+    
+    frame_result = Frame2DResult(
+        success=True,
+        nodes=nodes_list,
+        elements=elements_list,
+        reactions=reactions_list,
+        metrics=metrics,
+        diagrams=diagrams_list,
+        params={"slice_axis": slice_axis, "slice_value": slice_value},
+    )
+    
+    return SectionExtractResult(
+        success=True,
+        slice_axis=slice_axis,
+        slice_value=round(slice_value, 3),
+        tributary_width=round(extraction.tributary_width, 3),
+        calculated_udl_kn_m=round(calculated_udl / 1000, 3),
+        applied_udl_kn_m=round(applied_udl / 1000, 3),
+        section_span=round(section_span, 3),
+        n_nodes_extracted=extraction.n_nodes_found,
+        n_elements_extracted=extraction.n_bars_found,
+        frame_result=frame_result,
+    )
 
 
 if __name__ == "__main__":

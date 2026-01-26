@@ -22,8 +22,12 @@ import {
   DEFAULT_FRAME2D_PARAMS,
   DiagramType,
   AnalysisMode,
+  // Section extraction types
+  SliceAxis,
+  SectionExtractResult,
+  DEFAULT_SECTION_PARAMS,
 } from '@/lib/types'
-import { generateDesign, exploreDesigns, generateFrame2D } from '@/lib/api'
+import { generateDesign, exploreDesigns, generateFrame2D, extractSection } from '@/lib/api'
 
 // Color mode for 3D visualization
 export type ColorMode = 'none' | 'force' | 'utilization'
@@ -63,6 +67,16 @@ interface DesignState {
   // 2D Visualization
   diagramType: DiagramType
   showDeflectedShape2D: boolean
+  
+  // Section extraction state
+  sectionMode: boolean
+  sliceAxis: SliceAxis
+  slicePosition: number
+  udlOverride: number | null
+  sectionDeflectionScale: number
+  sectionResult: SectionExtractResult | null
+  sectionLoading: boolean
+  sectionError: string | null
   
   // Exploration state
   exploreSettings: {
@@ -107,6 +121,14 @@ interface DesignState {
   setShowDeflectedShape2D: (show: boolean) => void
   resetFrame2D: () => void
   
+  // Section extraction actions
+  setSectionMode: (enabled: boolean) => void
+  setSliceAxis: (axis: SliceAxis) => void
+  setSlicePosition: (position: number) => void
+  setUdlOverride: (udl: number | null) => void
+  setSectionDeflectionScale: (scale: number) => void
+  extractSectionFromModel: () => Promise<void>
+  
   // Exploration actions
   setExploreSettings: (settings: Partial<typeof DEFAULT_EXPLORE_SETTINGS>) => void
   runExploration: () => Promise<void>
@@ -148,6 +170,16 @@ export const useDesignStore = create<DesignState>((set, get) => ({
   frame2dDiagrams: [],
   diagramType: 'none',
   showDeflectedShape2D: true,
+  
+  // Section extraction initial state
+  sectionMode: false,
+  sliceAxis: DEFAULT_SECTION_PARAMS.slice_axis,
+  slicePosition: DEFAULT_SECTION_PARAMS.slice_position,
+  udlOverride: DEFAULT_SECTION_PARAMS.udl_override_kn_m ?? null,
+  sectionDeflectionScale: DEFAULT_SECTION_PARAMS.deflection_scale,
+  sectionResult: null,
+  sectionLoading: false,
+  sectionError: null,
   
   // Exploration initial state
   exploreSettings: { ...DEFAULT_EXPLORE_SETTINGS },
@@ -341,6 +373,95 @@ export const useDesignStore = create<DesignState>((set, get) => ({
       frame2dError: null,
     })
     get().generateFrame2D()
+  },
+  
+  // Section extraction actions
+  setSectionMode: (enabled) => {
+    set({ sectionMode: enabled })
+    if (enabled) {
+      // Trigger section extraction when enabled
+      get().extractSectionFromModel()
+    }
+  },
+  
+  setSliceAxis: (axis) => {
+    set({ sliceAxis: axis })
+    if (get().sectionMode) {
+      get().extractSectionFromModel()
+    }
+  },
+  
+  setSlicePosition: (position) => {
+    set({ slicePosition: position })
+    // Debounced extraction
+    if (debounceTimer2D) clearTimeout(debounceTimer2D)
+    debounceTimer2D = setTimeout(() => {
+      if (get().sectionMode) {
+        get().extractSectionFromModel()
+      }
+    }, 200)
+  },
+  
+  setUdlOverride: (udl) => {
+    set({ udlOverride: udl })
+    if (get().sectionMode) {
+      get().extractSectionFromModel()
+    }
+  },
+  
+  setSectionDeflectionScale: (scale) => {
+    set({ sectionDeflectionScale: scale })
+    if (get().sectionMode) {
+      get().extractSectionFromModel()
+    }
+  },
+  
+  extractSectionFromModel: async () => {
+    const { params, sliceAxis, slicePosition, udlOverride, sectionDeflectionScale } = get()
+    set({ sectionLoading: true, sectionError: null })
+    
+    try {
+      const result = await extractSection({
+        // 3D design params
+        width: params.width,
+        depth: params.depth,
+        nx: params.nx,
+        ny: params.ny,
+        min_height: params.min_height,
+        max_height: params.max_height,
+        heightfield: params.heightfield,
+        topology: params.topology,
+        support_layout: params.support_layout,
+        A_cm2: params.A_cm2,
+        gravity_kn: params.gravity_kn,
+        // Section params
+        slice_axis: sliceAxis,
+        slice_position: slicePosition,
+        udl_override_kn_m: udlOverride ?? undefined,
+        deflection_scale: sectionDeflectionScale,
+        n_diagram_points: 21,
+      })
+      
+      if (result.success) {
+        set({
+          sectionLoading: false,
+          sectionError: null,
+          sectionResult: result,
+        })
+      } else {
+        set({
+          sectionLoading: false,
+          sectionError: result.error || 'Failed to extract section',
+          sectionResult: null,
+        })
+      }
+    } catch (err) {
+      set({
+        sectionLoading: false,
+        sectionError: err instanceof Error ? err.message : 'Failed to extract section',
+        sectionResult: null,
+      })
+    }
   },
   
   // Exploration actions

@@ -2,10 +2,10 @@
 
 import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Environment, ContactShadows, Line } from '@react-three/drei'
+import { OrbitControls, Environment, ContactShadows, Line, Plane } from '@react-three/drei'
 import * as THREE from 'three'
 import { useDesignStore, ColorMode } from '@/store/designStore'
-import { NodeData, BarData } from '@/lib/types'
+import { NodeData, BarData, SliceAxis } from '@/lib/types'
 
 // Color palette - architectural/engineering style
 const COLORS = {
@@ -20,6 +20,9 @@ const COLORS = {
   utilSafe: new THREE.Color('#2D6A4F'),     // Green for safe (<70%)
   utilWarning: new THREE.Color('#E9C46A'),  // Yellow for warning (70-100%)
   utilFail: new THREE.Color('#D62828'),     // Red for failing (>100%)
+  // Section plane
+  sectionPlane: new THREE.Color('#4CAF50'), // Green for section plane
+  sectionHighlight: new THREE.Color('#81C784'), // Lighter green for highlighted bars
 }
 
 interface StructureProps {
@@ -30,9 +33,18 @@ interface StructureProps {
   showDeflected: boolean
   deflectionScale: number
   maxDisplacement: number
+  // Section mode props
+  sectionMode?: boolean
+  sliceAxis?: SliceAxis
+  slicePosition?: number
+  width?: number
+  depth?: number
 }
 
-function Structure({ nodes, bars, supportNodes, colorMode, showDeflected, deflectionScale, maxDisplacement }: StructureProps) {
+function Structure({ 
+  nodes, bars, supportNodes, colorMode, showDeflected, deflectionScale, maxDisplacement,
+  sectionMode, sliceAxis, slicePosition, width, depth 
+}: StructureProps) {
   // Create node lookup map
   const nodeMap = useMemo(() => {
     const map = new Map<number, NodeData>()
@@ -104,6 +116,30 @@ function Structure({ nodes, bars, supportNodes, colorMode, showDeflected, deflec
     return [x - center.x, z, y - center.y]
   }
 
+  // Calculate slice coordinate for section mode
+  const sliceCoord = useMemo(() => {
+    if (!sectionMode || slicePosition === undefined) return 0
+    const maxCoord = sliceAxis === 'x' ? (width ?? 10) : (depth ?? 8)
+    return slicePosition * maxCoord
+  }, [sectionMode, sliceAxis, slicePosition, width, depth])
+
+  // Check if a bar is on the slice plane (both nodes near the slice)
+  const isBarOnSlice = (bar: BarData): boolean => {
+    if (!sectionMode) return false
+    const startNode = nodeMap.get(bar.ni)
+    const endNode = nodeMap.get(bar.nj)
+    if (!startNode || !endNode) return false
+    
+    const tolerance = 0.1 // 10cm tolerance
+    if (sliceAxis === 'x') {
+      return Math.abs(startNode.x - sliceCoord) < tolerance && 
+             Math.abs(endNode.x - sliceCoord) < tolerance
+    } else {
+      return Math.abs(startNode.y - sliceCoord) < tolerance && 
+             Math.abs(endNode.y - sliceCoord) < tolerance
+    }
+  }
+
   // Calculate simulated deflected position (using force to estimate deflection direction)
   // In a real implementation, actual displacement data would come from the solver
   const getDeflectedCoords = (node: NodeData, bar?: BarData): [number, number, number] => {
@@ -131,17 +167,73 @@ function Structure({ nodes, bars, supportNodes, colorMode, showDeflected, deflec
     return toThreeCoords(node.x, node.y, node.z + dz)
   }
   
+  // Calculate section plane geometry
+  const sectionPlaneGeometry = useMemo(() => {
+    if (!sectionMode || !width || !depth) return null
+    
+    const maxZ = Math.max(...nodes.map(n => n.z), 5)
+    const minZ = Math.min(...nodes.map(n => n.z), 0)
+    const planeHeight = maxZ - minZ + 1
+    
+    if (sliceAxis === 'y') {
+      // Slice at constant Y - plane perpendicular to Y axis
+      // Plane extends in X and Z directions
+      const planeWidth = width + 2
+      return {
+        position: toThreeCoords(center.x, sliceCoord, (maxZ + minZ) / 2),
+        rotation: [0, 0, 0] as [number, number, number],
+        args: [planeWidth, planeHeight] as [number, number],
+      }
+    } else {
+      // Slice at constant X - plane perpendicular to X axis
+      // Plane extends in Y and Z directions
+      const planeWidth = depth + 2
+      return {
+        position: toThreeCoords(sliceCoord, center.y, (maxZ + minZ) / 2),
+        rotation: [0, Math.PI / 2, 0] as [number, number, number],
+        args: [planeWidth, planeHeight] as [number, number],
+      }
+    }
+  }, [sectionMode, sliceAxis, sliceCoord, width, depth, nodes, center])
+  
   return (
     <group>
+      {/* Section cutting plane */}
+      {sectionMode && sectionPlaneGeometry && (
+        <mesh 
+          position={sectionPlaneGeometry.position}
+          rotation={sectionPlaneGeometry.rotation}
+        >
+          <planeGeometry args={sectionPlaneGeometry.args} />
+          <meshStandardMaterial
+            color={COLORS.sectionPlane}
+            transparent
+            opacity={0.15}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
+      {/* Section plane edge lines */}
+      {sectionMode && sectionPlaneGeometry && (
+        <lineSegments position={sectionPlaneGeometry.position} rotation={sectionPlaneGeometry.rotation}>
+          <edgesGeometry args={[new THREE.PlaneGeometry(...sectionPlaneGeometry.args)]} />
+          <lineBasicMaterial color={COLORS.sectionPlane} linewidth={2} />
+        </lineSegments>
+      )}
+
       {/* Render bars as lines - original structure */}
       {bars.map((bar) => {
         const startNode = nodeMap.get(bar.ni)
         const endNode = nodeMap.get(bar.nj)
         if (!startNode || !endNode) return null
         
-        const color = getBarColor(bar)
-        // Thicker lines for failing members
-        const lineWidth = (bar.utilization ?? 0) >= 1.0 ? 2.5 : 1.5
+        const onSlice = isBarOnSlice(bar)
+        const baseColor = getBarColor(bar)
+        const color = onSlice ? COLORS.sectionHighlight : baseColor
+        // Thicker lines for failing members or bars on slice
+        const lineWidth = onSlice ? 3 : ((bar.utilization ?? 0) >= 1.0 ? 2.5 : 1.5)
         
         return (
           <Line
@@ -152,8 +244,8 @@ function Structure({ nodes, bars, supportNodes, colorMode, showDeflected, deflec
             ]}
             color={showDeflected && maxDisplacement > 0 ? COLORS.neutral : color}
             lineWidth={showDeflected && maxDisplacement > 0 ? 1 : lineWidth}
-            opacity={showDeflected && maxDisplacement > 0 ? 0.3 : 1}
-            transparent={showDeflected && maxDisplacement > 0}
+            opacity={showDeflected && maxDisplacement > 0 ? 0.3 : (sectionMode && !onSlice ? 0.4 : 1)}
+            transparent={showDeflected && maxDisplacement > 0 || (sectionMode && !onSlice)}
           />
         )
       })}
@@ -229,6 +321,11 @@ function Scene() {
     showDeflectedShape,
     deflectionScale3D,
     metrics,
+    // Section mode
+    sectionMode,
+    sliceAxis,
+    slicePosition,
+    params,
   } = useDesignStore()
   
   // Calculate camera distance based on structure size
@@ -293,6 +390,11 @@ function Scene() {
           showDeflected={showDeflectedShape}
           deflectionScale={deflectionScale3D}
           maxDisplacement={maxDisplacement}
+          sectionMode={sectionMode}
+          sliceAxis={sliceAxis}
+          slicePosition={slicePosition}
+          width={params.width}
+          depth={params.depth}
         />
       )}
       
@@ -311,7 +413,12 @@ function Scene() {
 }
 
 export function Canvas3D() {
-  const { isLoading, error, nodes, showDeflectedShape, deflectionScale3D, metrics } = useDesignStore()
+  const { isLoading, error, nodes, showDeflectedShape, deflectionScale3D, metrics, sectionMode, sliceAxis, slicePosition, params } = useDesignStore()
+  
+  // Calculate slice coordinate for display
+  const sliceCoord = sectionMode 
+    ? (slicePosition * (sliceAxis === 'x' ? params.width : params.depth)).toFixed(2)
+    : null
   
   return (
     <div className="relative w-full h-full min-h-[400px] overflow-hidden bg-slate-100">
@@ -352,6 +459,23 @@ export function Canvas3D() {
           </div>
           <div className="mt-1 text-[10px] text-slate-400">
             Max δ = {(metrics.max_displacement * 1000).toFixed(2)} mm
+          </div>
+        </div>
+      )}
+
+      {/* Section mode legend - bottom right */}
+      {sectionMode && nodes.length > 0 && (
+        <div className="absolute bottom-3 right-3 z-10 bg-white/90 rounded px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-3 h-3 bg-[#4CAF50] opacity-30 border border-[#4CAF50]" />
+            <span className="text-slate-600 font-medium">Section Plane</span>
+          </div>
+          <div className="text-[10px] text-slate-500">
+            {sliceAxis?.toUpperCase()} = {sliceCoord} m
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="w-4 h-0.5 bg-[#81C784]" style={{ height: '3px' }} />
+            <span className="text-[10px] text-slate-400">Extracted bars</span>
           </div>
         </div>
       )}
